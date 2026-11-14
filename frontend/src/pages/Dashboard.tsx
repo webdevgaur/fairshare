@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getGroups, createGroup } from '../lib/api'
+import { getGroups, createGroup, getAnalytics, type AnalyticsSummary, type CategorySpend, type MonthlySpend } from '../lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
@@ -43,8 +43,125 @@ function GroupCard({ group }: { group: Group }) {
   )
 }
 
+const CHART_COLORS = ['#0f766e', '#d97706', '#7c3aed', '#dc2626', '#0ea5e9', '#16a34a', '#e11d48', '#2563eb', '#9333ea', '#f59e0b', '#14b8a6', '#64748b']
+
+/** Minimal hand-built SVG donut showing proportional category spend. */
+function DonutChart({ data }: { data: CategorySpend[] }) {
+  const total = data.reduce((s, d) => s + d.amount, 0)
+  if (total <= 0) return <p className="text-sm text-slate-400">No spending to chart yet.</p>
+
+  const R = 40
+  const C = 2 * Math.PI * R
+  let offset = 0
+
+  return (
+    <div className="flex items-center gap-4">
+      <svg viewBox="0 0 100 100" className="w-28 h-28 shrink-0" role="img" aria-label="Spending by category">
+        <circle cx="50" cy="50" r={R} fill="none" stroke="#f1f5f9" strokeWidth="14" />
+        {data.map((d, i) => {
+          const dash = (d.amount / total) * C
+          const el = (
+            <circle
+              key={d.category}
+              cx="50"
+              cy="50"
+              r={R}
+              fill="none"
+              stroke={CHART_COLORS[i % CHART_COLORS.length]}
+              strokeWidth="14"
+              strokeDasharray={`${dash} ${C - dash}`}
+              strokeDashoffset={-offset}
+              transform="rotate(-90 50 50)"
+            />
+          )
+          offset += dash
+          return el
+        })}
+      </svg>
+      <ul className="text-sm space-y-1 min-w-0">
+        {data.map((d, i) => (
+          <li key={d.category} className="flex items-center gap-2" data-testid={`category-${d.category}`}>
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+            <span className="text-slate-700 truncate">{d.category}</span>
+            <span className="text-slate-500" data-testid={`category-amount-${d.category}`}>${d.amount.toFixed(2)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** Minimal hand-built SVG-free bar chart of monthly spend (last 12 months). */
+function BarChart({ data }: { data: MonthlySpend[] }) {
+  if (!data.length) return <p className="text-sm text-slate-400">No monthly data yet.</p>
+  const max = Math.max(...data.map((d) => d.amount), 1)
+  return (
+    <div>
+      <div className="flex items-end gap-1" style={{ height: 128 }} role="img" aria-label="Monthly spending over the last 12 months">
+        {data.map((d) => (
+          <div key={d.month} className="flex-1 flex flex-col items-center justify-end h-full" title={`${d.month}: $${d.amount.toFixed(2)}`}>
+            <div
+              className="w-full rounded-t bg-teal-500"
+              data-testid={`bar-${d.month}`}
+              style={{ height: `${Math.max(2, (d.amount / max) * 100)}%`, opacity: d.amount > 0 ? 1 : 0.25 }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-1 mt-1">
+        {data.map((d) => (
+          <span key={d.month} className="flex-1 text-center text-[10px] text-slate-400" data-testid={`month-${d.month}`}>{d.month.slice(5)}</span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** The F3 Spending Insights & Analytics dashboard section. */
+function SpendingInsights({ analytics }: { analytics: AnalyticsSummary }) {
+  return (
+    <div className="mb-6">
+      <h2 className="text-lg font-semibold text-slate-900 mb-3">Spending Insights</h2>
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <Card className="p-4" data-testid="analytics-this-month">
+          <p className="text-xs text-slate-500 font-semibold tracking-wide">This month</p>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">${analytics.totalThisMonth.toFixed(2)}</p>
+        </Card>
+        <Card className="p-4" data-testid="analytics-last-month">
+          <p className="text-xs text-slate-500 font-semibold tracking-wide">Last month</p>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">${analytics.totalLastMonth.toFixed(2)}</p>
+        </Card>
+        <Card className="p-4" data-testid="analytics-all-time">
+          <p className="text-xs text-slate-500 font-semibold tracking-wide">All time</p>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">${analytics.totalAllTime.toFixed(2)}</p>
+        </Card>
+      </div>
+
+      {analytics.expenseCount === 0 ? (
+        <Card className="text-center py-8">
+          <div className="text-3xl mb-2">📊</div>
+          <p className="text-slate-500 font-medium">No spending yet</p>
+          <p className="text-sm text-slate-400 mt-1">Add expenses to see insights</p>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          <Card className="p-4">
+            <h3 className="text-sm font-semibold text-slate-700 mb-3">By category</h3>
+            <DonutChart data={analytics.byCategory} />
+          </Card>
+          <Card className="p-4">
+            <h3 className="text-sm font-semibold text-slate-700 mb-3">Monthly spending</h3>
+            <BarChart data={analytics.monthlySpend} />
+          </Card>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [groups, setGroups] = useState<Group[]>([])
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
@@ -53,6 +170,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setGroups(getGroups())
+    setAnalytics(getAnalytics())
     setLoading(false)
   }, [])
 
@@ -87,6 +205,9 @@ export default function Dashboard() {
           <p className="text-xl sm:text-2xl font-bold text-rose-700 mt-1">${totalDebt.toFixed(2)}</p>
         </Card>
       </div>
+
+      {/* Spending Insights (F3) */}
+      {analytics && <SpendingInsights analytics={analytics} />}
 
       {/* Groups header */}
       <div className="flex items-center justify-between mb-3">

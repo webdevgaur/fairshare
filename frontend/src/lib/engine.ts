@@ -22,6 +22,11 @@ export interface Expense {
   date: string
   /** Full ISO timestamp when the expense was created — used for activity-feed sorting. */
   created_at: string
+  /**
+   * Optional curated category (one of CATEGORIES). Absent/unknown values fold
+   * into "Other" at read-time (see normalizeCategory), so records stay honest.
+   */
+  category?: string
   splits: ExpenseSplit[]
 }
 
@@ -219,4 +224,133 @@ export function calculateBalances(
     user_name: m.name,
     balance: Math.round((balances[m.id] || 0) * 100) / 100,
   }))
+}
+
+/* ─── Spending Insights & Analytics (F3) ─── */
+
+/**
+ * The 12 curated categories. The picker offers exactly these; unassigned and
+ * unknown/normalized strings fold into "Other" (see normalizeCategory).
+ * Kept as a `const` array so it can be used directly in a picker.
+ */
+export const CATEGORIES = [
+  'Food',
+  'Transport',
+  'Utilities',
+  'Entertainment',
+  'Groceries',
+  'Dining Out',
+  'Travel',
+  'Shopping',
+  'Health',
+  'Rent',
+  'Education',
+  'Other',
+] as const
+
+export type Category = (typeof CATEGORIES)[number]
+
+/** The bucket that unassigned / unknown categories fold into. */
+export const OTHER_CATEGORY = 'Other'
+
+/**
+ * Normalize a free-string category to one of CATEGORIES. Trims and compares
+ * case-insensitively; anything unrecognised (or absent) becomes "Other".
+ */
+export function normalizeCategory(category?: string | null): string {
+  if (!category) return OTHER_CATEGORY
+  const trimmed = category.trim()
+  if (!trimmed) return OTHER_CATEGORY
+  const lower = trimmed.toLowerCase()
+  const match = CATEGORIES.find((c) => c.toLowerCase() === lower)
+  return match ?? OTHER_CATEGORY
+}
+
+/** Spend summed for one category (or one month bucket). */
+export interface CategorySpend {
+  category: string
+  amount: number
+}
+
+/** Spend summed for one calendar month, keyed by `YYYY-MM`. */
+export interface MonthlySpend {
+  month: string
+  amount: number
+}
+
+/** On-read aggregation of spending across the given expenses. */
+export interface AnalyticsSummary {
+  totalAllTime: number
+  totalThisMonth: number
+  totalLastMonth: number
+  expenseCount: number
+  /** Category breakdown, descending by amount. */
+  byCategory: CategorySpend[]
+  /** Monthly spend over the last 12 months, ascending by month. */
+  monthlySpend: MonthlySpend[]
+}
+
+const round2 = (n: number): number => Math.round(n * 100) / 100
+
+function monthKey(date: string): string {
+  return date.slice(0, 7) // 'YYYY-MM'
+}
+
+/**
+ * Compute spending analytics on read from the store — no persisted cache.
+ *
+ * "Spend" = sum of `expense.amount` only. Settlements are repayments, not
+ * purchases, so they are deliberately excluded (matching the ADR).
+ *
+ * Currency-agnostic: grouped purely by (month | category) so F7's conversion
+ * step can be layered on later without rewriting this aggregation.
+ */
+export function computeAnalytics(expenses: Expense[]): AnalyticsSummary {
+  const now = new Date()
+  const nowKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const lastKey = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`
+
+  // Last 12 months of buckets (ascending), seeded to zero so gaps show as 0.
+  const monthlyMap = new Map<string, number>()
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    monthlyMap.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, 0)
+  }
+
+  const catMap = new Map<string, number>()
+
+  let totalAllTime = 0
+  let totalThisMonth = 0
+  let totalLastMonth = 0
+
+  for (const e of expenses) {
+    const amt = e.amount || 0
+    totalAllTime += amt
+
+    const key = monthKey(e.date)
+    if (key === nowKey) totalThisMonth += amt
+    if (key === lastKey) totalLastMonth += amt
+    monthlyMap.set(key, (monthlyMap.get(key) ?? 0) + amt)
+
+    const cat = normalizeCategory(e.category)
+    catMap.set(cat, (catMap.get(cat) ?? 0) + amt)
+  }
+
+  const monthlySpend: MonthlySpend[] = Array.from(monthlyMap.entries())
+    .map(([month, amount]) => ({ month, amount: round2(amount) }))
+    .sort((a, b) => a.month.localeCompare(b.month))
+
+  const byCategory: CategorySpend[] = Array.from(catMap.entries())
+    .map(([category, amount]) => ({ category, amount: round2(amount) }))
+    .sort((a, b) => b.amount - a.amount)
+
+  return {
+    totalAllTime: round2(totalAllTime),
+    totalThisMonth: round2(totalThisMonth),
+    totalLastMonth: round2(totalLastMonth),
+    expenseCount: expenses.length,
+    byCategory,
+    monthlySpend,
+  }
 }

@@ -19,4 +19,4 @@ frontend/.env
 # Test artifacts
 frontend/test-results/
 frontend/playwright-report/
-frontend/tests/
+frontend/tests/test-results/

@@ -36,6 +36,8 @@ export interface ExpenseRecord {
   description: string
   date: string
   created_at: string
+  /** Optional curated category (one of CATEGORIES); absent = "Other" at read. */
+  category?: string
 }
 
 export interface ExpenseSplitRecord {
@@ -277,7 +279,7 @@ export class LocalStore {
     amount: number,
     description: string,
     splits: { user_id: string; amount: number }[],
-    opts?: { uuid?: string; date?: string; created_at?: string },
+    opts?: { uuid?: string; date?: string; created_at?: string; category?: string },
   ): Expense {
     const id = this.state.nextExpenseId++
     const nowIso = new Date().toISOString()
@@ -293,6 +295,7 @@ export class LocalStore {
       description,
       date,
       created_at,
+      category: opts?.category,
     }
     this.state.expenses.push(exp)
 
@@ -322,6 +325,7 @@ export class LocalStore {
       description,
       date,
       created_at,
+      category: opts?.category,
       splits: expenseSplits,
     }
   }
@@ -590,6 +594,7 @@ export class LocalStore {
         existing.description = ie.description
         existing.date = ie.date
         existing.created_at = ie.created_at
+        if (ie.category !== undefined) existing.category = ie.category
       } else {
         const id = nextIdFrom(nextExpenses)
         nextExpenses.push({
@@ -601,6 +606,7 @@ export class LocalStore {
           description: ie.description,
           date: ie.date,
           created_at: ie.created_at,
+          category: ie.category,
         })
         expenseUuidToId.set(ie.uuid, id)
       }

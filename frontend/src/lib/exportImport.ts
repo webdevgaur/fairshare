@@ -241,7 +241,7 @@ export function buildExpensesCSV(): string {
   const nameById = new Map(data.users.map((u) => [u.id, u.name]))
   const groupNameById = new Map(data.groups.map((g) => [g.id, g.name]))
   const rows: (string | number | null)[][] = [
-    ['uuid', 'date', 'description', 'amount', 'group_name', 'paid_by_name', 'participants', 'split', 'created_at'],
+    ['uuid', 'date', 'description', 'category', 'amount', 'group_name', 'paid_by_name', 'participants', 'split', 'created_at'],
   ]
   for (const e of data.expenses) {
     const splits = data.expenseSplits.filter((s) => s.expense_id === e.id)
@@ -251,6 +251,7 @@ export function buildExpensesCSV(): string {
       e.uuid,
       e.date,
       e.description,
+      e.category ?? '',
       e.amount,
       groupNameById.get(e.group_id) ?? String(e.group_id),
       nameById.get(e.paid_by) ?? 'Unknown',
@@ -511,6 +512,7 @@ export function parseSplitwiseCSV(text: string, groupName?: string): SplitwiseRe
       description,
       date,
       created_at: now,
+      category: category || undefined,
     })
     for (const s of splits) {
       state.expenseSplits.push({ id: state.nextSplitId++, expense_id: expenseId, user_id: s.user_id, amount: s.amount })

@@ -10,6 +10,7 @@ import {
   getCurrentUserId,
   getSuggestedSettlements,
   getUserPaymentHandles,
+  CATEGORIES,
 } from '../lib/api'
 import type { BalanceEntry, Transaction } from '../lib/api'
 import { buildPaymentLink, type PaymentProvider } from '../lib/paymentLinks'
@@ -62,6 +63,7 @@ export default function GroupPage() {
   const [showExpense, setShowExpense] = useState(false)
   const [expDesc, setExpDesc] = useState('')
   const [expAmount, setExpAmount] = useState('')
+  const [expCategory, setExpCategory] = useState('')
   const [expSplits, setExpSplits] = useState<'equal' | 'custom'>('equal')
   const [expCustomSplits, setExpCustomSplits] = useState<Record<string, string>>({})
   const [expCustomError, setExpCustomError] = useState('')
@@ -121,6 +123,7 @@ export default function GroupPage() {
           group_id: groupId,
           amount,
           description: expDesc,
+          category: expCategory || undefined,
           splits: parsed,
         })
       } else {
@@ -129,6 +132,7 @@ export default function GroupPage() {
           group_id: groupId,
           amount,
           description: expDesc,
+          category: expCategory || undefined,
           splits: members.map((m) => ({ user_id: m.id })),
         })
       }
@@ -137,6 +141,7 @@ export default function GroupPage() {
         group_id: groupId,
         amount,
         description: expDesc,
+        category: expCategory || undefined,
         splits: members.map((m) => ({ user_id: m.id })),
       })
     }
@@ -146,6 +151,7 @@ export default function GroupPage() {
     setShowExpense(false)
     setExpDesc('')
     setExpAmount('')
+    setExpCategory('')
     setExpCustomSplits({})
     setExpCustomError('')
   }
@@ -346,6 +352,18 @@ export default function GroupPage() {
               min="0.01"
               placeholder="Amount"
             />
+            <Select value={expCategory} onValueChange={(v) => setExpCategory(v ?? '')}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Category (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORIES.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <div className="flex gap-2">
               <Button
                 type="button"

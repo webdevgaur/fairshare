@@ -548,6 +548,7 @@ class SyncClient {
             uuid?: string
             date?: string
             created_at?: string
+            category?: string
             id?: number
           }
           // Preserve cross-device identity: carry the creator's uuid, falling
@@ -559,7 +560,7 @@ class SyncClient {
             d.amount,
             d.description,
             d.splits,
-            { uuid: d.uuid ?? op.op_id, date: d.date, created_at: d.created_at },
+            { uuid: d.uuid ?? op.op_id, date: d.date, created_at: d.created_at, category: d.category },
           )
           notifyActivity({
             title: 'New expense',

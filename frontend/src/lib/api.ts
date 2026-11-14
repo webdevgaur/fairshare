@@ -1,5 +1,5 @@
 import { store, type StoreState } from './store'
-import { calculateBalances, simplifyDebts, type BalanceEntry, type Expense, type Settlement, type Transaction, type PaymentHandles, type Comment, type ActivityItem } from './engine'
+import { calculateBalances, simplifyDebts, computeAnalytics, CATEGORIES, type BalanceEntry, type Expense, type Settlement, type Transaction, type PaymentHandles, type Comment, type ActivityItem, type AnalyticsSummary, type CategorySpend, type MonthlySpend } from './engine'
 import { getLocalUser } from './identity'
 import { syncClient } from './sync'
 import { buildActivityFeed } from './feed'
@@ -7,7 +7,8 @@ import { exportJSON, buildCSVBundle, parseJSON, parseSplitwiseCSV, isSplitwiseCS
 
 /* ─── Re-export types ─── */
 
-export type { BalanceEntry, Expense, Settlement, Transaction, PaymentHandles, Comment, ActivityItem }
+export type { BalanceEntry, Expense, Settlement, Transaction, PaymentHandles, Comment, ActivityItem, AnalyticsSummary, CategorySpend, MonthlySpend }
+export { CATEGORIES } from './engine'
 export type { Member } from './engine'
 
 export interface GroupSummary {
@@ -132,6 +133,7 @@ export function createExpense(data: {
   amount: number
   description: string
   date?: string
+  category?: string
   splits: { user_id: string; amount?: number; percentage?: number }[]
 }): Expense {
   const user = getLocalUser()
@@ -152,7 +154,7 @@ export function createExpense(data: {
     data.amount,
     data.description,
     resolvedSplits,
-    { date: data.date },
+    { date: data.date, category: data.category },
   )
 
   syncClient.enqueue('create_expense', {
@@ -164,6 +166,7 @@ export function createExpense(data: {
     uuid: expense.uuid,
     date: expense.date,
     created_at: expense.created_at,
+    category: data.category,
   })
 
   return expense
@@ -262,6 +265,30 @@ export function getSuggestedSettlements(groupId: number): Transaction[] {
   const settlements = store.getGroupSettlements(groupId)
   const balances = calculateBalances(expenses, settlements, members)
   return simplifyDebts(balances)
+}
+
+/* ─── Spending Insights & Analytics (F3) ─── */
+
+/** The curated picker options (12 categories). */
+export function getCategories(): string[] {
+  return [...CATEGORIES]
+}
+
+/**
+ * Compute spending analytics across the current user's groups, on read from
+ * the store (no persisted cache). Spend = sum of expense.amount only; the
+ * dashboard's "owed/owe" figures stay separate (balance engine untouched).
+ */
+export function getAnalytics(): AnalyticsSummary {
+  const user = getLocalUser()
+  if (!user) return computeAnalytics([])
+
+  const groupIds = store.getUserGroupIds(user.id)
+  const expenses: Expense[] = []
+  for (const gid of groupIds) {
+    expenses.push(...store.getGroupExpenses(gid))
+  }
+  return computeAnalytics(expenses)
 }
 
 /* ─── Export / Import (F5) ─── */
@@ -403,6 +430,7 @@ function enqueueImported(data: StoreState, baseline: ImportBaseline): void {
       uuid: me.uuid,
       date: me.date,
       created_at: me.created_at,
+      category: me.category,
     })
   }
   for (const s of data.settlements) {
