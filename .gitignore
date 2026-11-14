@@ -15,3 +15,8 @@ frontend/.env
 .DS_Store
 *.swp
 *.swo
+
+# Test artifacts
+frontend/test-results/
+frontend/playwright-report/
+frontend/tests/
