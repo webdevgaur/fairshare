@@ -16,6 +16,8 @@
  */
 
 import { store } from './store'
+import type { PaymentHandles } from './engine'
+import { notifyActivity } from './notifications'
 
 // ─── Types ─────────────────────────────────────���────────────────────────────
 
@@ -25,7 +27,7 @@ export interface CRDTOperation {
   /** Globally unique operation ID (nanoid-style) */
   op_id: string
   /** Operation type */
-  type: 'create_group' | 'create_expense' | 'create_settlement' | 'update_group'
+  type: 'create_group' | 'create_expense' | 'create_settlement' | 'create_comment' | 'update_group' | 'update_profile'
   /** Group this operation belongs to */
   group_id: string | number
   /** Lamport clock value at time of creation */
@@ -543,16 +545,52 @@ class SyncClient {
             amount: number
             description: string
             splits: { user_id: string; amount: number }[]
+            uuid?: string
+            date?: string
+            created_at?: string
             id?: number
           }
-          // Use the op_id as the expense ID for global uniqueness
-          store.createExpense(
+          // Preserve cross-device identity: carry the creator's uuid, falling
+          // back to the operation id (globally unique) rather than minting a
+          // fresh local numeric id.
+          const expense = store.createExpense(
             d.group_id,
             d.paid_by,
             d.amount,
             d.description,
             d.splits,
+            { uuid: d.uuid ?? op.op_id, date: d.date, created_at: d.created_at },
           )
+          notifyActivity({
+            title: 'New expense',
+            body: `${expense.paid_by_name} added "${expense.description}" for $${expense.amount.toFixed(2)}`,
+            tag: `expense-${expense.uuid}`,
+          })
+          break
+        }
+
+        case 'create_comment': {
+          const d = op.data as {
+            group_id: number
+            expense_uuid: string
+            expense_id: number
+            author_id: string
+            author_name: string
+            text: string
+          }
+          const comment = store.createComment(
+            d.group_id,
+            d.expense_uuid,
+            d.expense_id,
+            d.author_id,
+            d.author_name,
+            d.text,
+          )
+          notifyActivity({
+            title: 'New comment',
+            body: `${comment.author_name} commented: "${comment.text}"`,
+            tag: `comment-${comment.id}`,
+          })
           break
         }
 
@@ -562,8 +600,15 @@ class SyncClient {
             from_user: string
             to_user: string
             amount: number
+            date?: string
+            created_at?: string
+            uuid?: string
           }
-          store.createSettlement(d.group_id, d.from_user, d.to_user, d.amount)
+          store.createSettlement(d.group_id, d.from_user, d.to_user, d.amount, {
+            date: d.date,
+            created_at: d.created_at,
+            uuid: d.uuid ?? op.op_id,
+          })
           break
         }
 
@@ -573,11 +618,14 @@ class SyncClient {
             description: string | null
             member_ids: string[]
             id?: number
+            uuid?: string
+            created_at?: string
           }
           store.createGroup(
             d.name,
             d.description ?? null,
             d.member_ids,
+            { uuid: d.uuid ?? op.op_id, created_at: d.created_at },
           )
           break
         }
@@ -585,6 +633,12 @@ class SyncClient {
       case 'update_group':
         // Group metadata LWW update — store doesn't support edits yet
         break
+
+      case 'update_profile': {
+        const d = op.data as { user_id: string; handles: PaymentHandles }
+        store.setUserPaymentHandles(d.user_id, d.handles)
+        break
+      }
     }
   }
 

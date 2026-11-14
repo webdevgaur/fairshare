@@ -5,17 +5,18 @@ import {
   getGroup,
   getGroupBalances,
   getGroupMembers,
-  getExpenses,
   createExpense,
-  getSettlements,
   createSettlement,
   getCurrentUserId,
+  getSuggestedSettlements,
+  getUserPaymentHandles,
 } from '../lib/api'
-import type { BalanceEntry, Expense, Settlement } from '../lib/api'
+import type { BalanceEntry, Transaction } from '../lib/api'
+import { buildPaymentLink, type PaymentProvider } from '../lib/paymentLinks'
+import ActivityFeed from '@/components/ActivityFeed'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectTrigger,
@@ -33,6 +34,12 @@ function formatCurrency(n: number) {
   return '$' + n.toFixed(2)
 }
 
+const providerLabels: Record<PaymentProvider, string> = {
+  venmo: 'Venmo',
+  paypal: 'PayPal',
+  cashapp: 'Cash App',
+}
+
 function ChevronDown({ className }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -48,8 +55,6 @@ export default function GroupPage() {
   const [group, setGroup] = useState<any>(null)
   const [members, setMembers] = useState<Member[]>([])
   const [balances, setBalances] = useState<BalanceEntry[]>([])
-  const [expenses, setExpenses] = useState<Expense[]>([])
-  const [settlements, setSettlements] = useState<Settlement[]>([])
   const [loading, setLoading] = useState(true)
   const [showBalances, setShowBalances] = useState(false)
 
@@ -58,11 +63,16 @@ export default function GroupPage() {
   const [expDesc, setExpDesc] = useState('')
   const [expAmount, setExpAmount] = useState('')
   const [expSplits, setExpSplits] = useState<'equal' | 'custom'>('equal')
+  const [expCustomSplits, setExpCustomSplits] = useState<Record<string, string>>({})
+  const [expCustomError, setExpCustomError] = useState('')
 
   // Settlement form
   const [showSettle, setShowSettle] = useState(false)
   const [settleFrom, setSettleFrom] = useState('')
+  const [settleTo, setSettleTo] = useState('')
   const [settleAmount, setSettleAmount] = useState('')
+  const [settleProvider, setSettleProvider] = useState<PaymentProvider>('venmo')
+  const [suggestedTxns, setSuggestedTxns] = useState<Transaction[]>([])
 
   const currentUserId = getCurrentUserId()
 
@@ -70,14 +80,10 @@ export default function GroupPage() {
     const g = getGroup(groupId)
     const m = getGroupMembers(groupId)
     const b = getGroupBalances(groupId)
-    const e = getExpenses(groupId)
-    const s = getSettlements(groupId)
 
     setGroup(g)
     setMembers(m)
     setBalances(b.balances)
-    setExpenses(e)
-    setSettlements(s)
     setLoading(false)
   }
 
@@ -91,44 +97,89 @@ export default function GroupPage() {
     const amount = parseFloat(expAmount)
     if (!expDesc.trim() || !amount || amount <= 0) return
 
-    const splits =
-      expSplits === 'equal'
-        ? members.map((m) => ({ user_id: m.id }))
-        : members.map((m) => ({ user_id: m.id, amount: amount / members.length }))
+    if (expSplits === 'custom') {
+      const entries = members.map((m) => ({
+        member: m,
+        raw: expCustomSplits[m.id] ?? '',
+      }))
 
-    createExpense({
-      group_id: groupId,
-      amount,
-      description: expDesc,
-      splits,
-    })
+      const filled = entries.filter((e) => e.raw.trim() !== '')
+      if (filled.length > 0) {
+        const parsed = filled.map((e) => ({
+          user_id: e.member.id,
+          amount: parseFloat(e.raw),
+        }))
+        const sum = parsed.reduce((acc, s) => acc + s.amount, 0)
+        if (Math.abs(sum - amount) > 0.01) {
+          setExpCustomError(
+            `Custom splits must total $${amount.toFixed(2)} (currently $${sum.toFixed(2)})`
+          )
+          return
+        }
+        setExpCustomError('')
+        createExpense({
+          group_id: groupId,
+          amount,
+          description: expDesc,
+          splits: parsed,
+        })
+      } else {
+        // All empty — fall back to equal split
+        createExpense({
+          group_id: groupId,
+          amount,
+          description: expDesc,
+          splits: members.map((m) => ({ user_id: m.id })),
+        })
+      }
+    } else {
+      createExpense({
+        group_id: groupId,
+        amount,
+        description: expDesc,
+        splits: members.map((m) => ({ user_id: m.id })),
+      })
+    }
 
     // Reload data
-    setExpenses(getExpenses(groupId))
     setBalances(getGroupBalances(groupId).balances)
     setShowExpense(false)
     setExpDesc('')
     setExpAmount('')
+    setExpCustomSplits({})
+    setExpCustomError('')
   }
 
   function handleSettle(e: React.FormEvent) {
     e.preventDefault()
     const amount = parseFloat(settleAmount)
-    if (!settleFrom || !amount || amount <= 0) return
+    if (!settleFrom || !settleTo || !amount || amount <= 0) return
 
     createSettlement({
       group_id: groupId,
       from_user: settleFrom,
-      to_user: balances.find((b) => b.balance > 0)?.user_id || '',
+      to_user: settleTo,
       amount,
     })
 
     // Reload data
-    setSettlements(getSettlements(groupId))
     setBalances(getGroupBalances(groupId).balances)
     setShowSettle(false)
     setSettleFrom('')
+    setSettleTo('')
     setSettleAmount('')
+  }
+
+  function handleSuggest() {
+    const txns = getSuggestedSettlements(groupId)
+    setSuggestedTxns(txns)
+    if (txns.length === 1) {
+      const t = txns[0]
+      setSettleFrom(t.from_user)
+      setSettleTo(t.to_user)
+      setSettleAmount(String(t.amount))
+      setShowSettle(true)
+    }
   }
 
   if (loading) {
@@ -144,6 +195,18 @@ export default function GroupPage() {
   if (!group) return <p className="text-slate-400">Group not found</p>
 
   const myBalance = balances.find((b) => b.user_id === currentUserId)?.balance ?? 0
+
+  const settleAmountNum = parseFloat(settleAmount)
+  const recipHandles = settleTo ? getUserPaymentHandles(settleTo) : null
+  const payLink = settleTo && settleAmountNum > 0
+    ? buildPaymentLink(settleProvider, {
+        username: recipHandles?.venmo_username ?? null,
+        paypal_handle: recipHandles?.paypal_handle ?? null,
+        cashtag: recipHandles?.cashapp_cashtag ?? null,
+        amount: settleAmountNum,
+        memo: 'FairShare settlement',
+      })
+    : null
 
   return (
     <div className="animate-fade-in">
@@ -193,12 +256,7 @@ export default function GroupPage() {
             {balances.map((b) => (
               <div key={b.user_id} className="flex items-center justify-between text-sm">
                 <span className="text-slate-700">
-                  {b.user_name}
-                  {b.user_id === currentUserId && (
-                    <Badge variant="secondary" className="ml-1.5 bg-blue-50 text-blue-700 hover:bg-blue-50 border-none">
-                      you
-                    </Badge>
-                  )}
+                  {b.user_id === currentUserId ? 'You' : b.user_name}
                 </span>
                 <span
                   className={
@@ -213,11 +271,43 @@ export default function GroupPage() {
                     ? 'settled'
                     : b.balance > 0
                       ? `+${formatCurrency(b.balance)}`
-                      : formatCurrency(b.balance)}
+                      : `-${formatCurrency(Math.abs(b.balance))}`}
                 </span>
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Suggest settlement */}
+        <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+          <Button variant="outline" size="sm" onClick={handleSuggest} className="w-full">
+            ✨ Suggest settlement
+          </Button>
+
+          {suggestedTxns.length > 1 && (
+            <div className="mt-3 space-y-2">
+              <p className="text-xs font-medium text-slate-500">Tap "Use" to prefill a settlement</p>
+              {suggestedTxns.map((t, i) => (
+                <div key={i} className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5">
+                  <span className="text-sm text-slate-700">
+                    {t.from_user_name} pays {t.to_user_name} {formatCurrency(t.amount)}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setSettleFrom(t.from_user)
+                      setSettleTo(t.to_user)
+                      setSettleAmount(String(t.amount))
+                      setShowSettle(true)
+                    }}
+                  >
+                    Use
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </Card>
 
@@ -239,8 +329,8 @@ export default function GroupPage() {
       </div>
 
       {/* Add expense form */}
-      <div className={`transition-all duration-200 ease-in-out overflow-hidden ${showExpense ? 'max-h-96 opacity-100 mb-4' : 'max-h-0 opacity-0 mb-0'}`}>
-        <Card>
+      {showExpense && (
+        <Card className="mb-4">
           <form onSubmit={handleAddExpense} className="p-4 space-y-3">
             <Input
               value={expDesc}
@@ -274,6 +364,29 @@ export default function GroupPage() {
                 Custom
               </Button>
             </div>
+            {expSplits === 'custom' && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-slate-500">Custom splits</p>
+                {members.map((m) => (
+                  <div key={m.id} className="flex items-center gap-2">
+                    <span className="text-sm text-slate-700 w-24 truncate">{m.name}</span>
+                    <Input
+                      value={expCustomSplits[m.id] ?? ''}
+                      onChange={(e) =>
+                        setExpCustomSplits((prev) => ({ ...prev, [m.id]: e.target.value }))
+                      }
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                    />
+                  </div>
+                ))}
+                {expCustomError && (
+                  <p className="text-xs text-rose-500">{expCustomError}</p>
+                )}
+              </div>
+            )}
             <div className="flex gap-2">
               <Button type="submit">
                 Add
@@ -284,11 +397,11 @@ export default function GroupPage() {
             </div>
           </form>
         </Card>
-      </div>
+      )}
 
       {/* Settle form */}
-      <div className={`transition-all duration-200 ease-in-out overflow-hidden ${showSettle ? 'max-h-96 opacity-100 mb-4' : 'max-h-0 opacity-0 mb-0'}`}>
-        <Card>
+      {showSettle && (
+        <Card className="mb-4">
           <form onSubmit={handleSettle} className="p-4 space-y-3">
             <Select
               value={settleFrom}
@@ -307,6 +420,23 @@ export default function GroupPage() {
                   ))}
               </SelectContent>
             </Select>
+            <Select
+              value={settleTo}
+              onValueChange={(value) => setSettleTo(value)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Who's getting paid?" />
+              </SelectTrigger>
+              <SelectContent>
+                {balances
+                  .filter((b) => b.balance > 0)
+                  .map((b) => (
+                    <SelectItem key={b.user_id} value={b.user_id}>
+                      {b.user_name} is owed {formatCurrency(b.balance)}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
             <Input
               value={settleAmount}
               onChange={(e) => setSettleAmount(e.target.value)}
@@ -316,8 +446,29 @@ export default function GroupPage() {
               placeholder="Amount"
             />
             <div className="flex gap-2">
+              {(['venmo', 'paypal', 'cashapp'] as const).map((p) => (
+                <Button
+                  key={p}
+                  type="button"
+                  size="sm"
+                  variant={settleProvider === p ? 'default' : 'secondary'}
+                  onClick={() => setSettleProvider(p)}
+                >
+                  {providerLabels[p]}
+                </Button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
               <Button type="submit">
-                Record Payment
+                I Paid — Record Payment
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!payLink}
+                onClick={() => payLink && window.open(payLink, '_blank', 'noopener')}
+              >
+                Pay with {providerLabels[settleProvider]}
               </Button>
               <Button type="button" variant="ghost" onClick={() => setShowSettle(false)}>
                 Cancel
@@ -325,101 +476,14 @@ export default function GroupPage() {
             </div>
           </form>
         </Card>
-      </div>
+      )}
 
-      {/* Expense feed */}
+      {/* Unified activity feed */}
       <h2 className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
         <span className="inline-block w-0.5 h-3.5 rounded-full bg-slate-300" />
-        Expenses
+        Activity
       </h2>
-      {expenses.length === 0 ? (
-        <Card className="text-center py-12">
-          <div className="text-3xl mb-3">🧾</div>
-          <p className="text-slate-500 font-medium">No expenses yet</p>
-          <p className="text-sm text-slate-400 mt-1">Tap "Add Expense" to split your first bill</p>
-        </Card>
-      ) : (
-        <div className="space-y-2 mb-6">
-          {expenses.map((exp, idx) => {
-            const showDate = idx === 0 || exp.date !== expenses[idx - 1].date
-            const isUserInvolved = currentUserId && (exp.paid_by === currentUserId || exp.splits.some(s => s.user_id === currentUserId))
-            return (
-              <React.Fragment key={exp.id}>
-                {showDate && (
-                  <div className="flex items-center gap-2 pt-4 first:pt-0">
-                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                      {exp.date}
-                    </span>
-                    <span className="flex-1 h-px bg-slate-100" />
-                  </div>
-                )}
-                <Card className={`p-4 transition-all duration-150 ${
-                  isUserInvolved
-                    ? 'border-l-4 border-l-slate-400'
-                    : ''
-                } hover:border-slate-300 hover:shadow-sm`}>
-                  <div className="flex items-start justify-between">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-slate-900 truncate">{exp.description}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        <span className="text-slate-500">{exp.paid_by_name}</span>
-                        <span className="text-slate-400 mx-1">·</span>
-                        <span>{exp.date}</span>
-                        <span className="text-slate-300 mx-1">·</span>
-                        <span className="text-slate-500">{exp.splits.length} ways</span>
-                      </p>
-                    </div>
-                    <p className="font-semibold text-slate-900 shrink-0 ml-2">{formatCurrency(exp.amount)}</p>
-                  </div>
-                  <div className="mt-2 pt-2 border-t border-slate-100">
-                    {exp.splits.map((s) => (
-                      <div key={s.user_id} className="flex items-center justify-between text-xs py-0.5">
-                        <span className={s.user_id === currentUserId ? 'font-medium text-slate-900' : 'text-slate-500'}>
-                          {s.user_name}
-                          {s.user_id === currentUserId && (
-                            <Badge variant="secondary" className="ml-1.5 bg-blue-50 text-blue-700 hover:bg-blue-50 border-none">
-                              you
-                            </Badge>
-                          )}
-                        </span>
-                        <span className="text-slate-500">{formatCurrency(s.amount)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              </React.Fragment>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Settlements */}
-      {settlements.length > 0 && (
-        <>
-          <h2 className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-            <span className="inline-block w-0.5 h-3.5 rounded-full bg-amber-300" />
-            Settlements
-          </h2>
-          <div className="space-y-2">
-            {settlements.map((s) => (
-              <Card key={s.id} className="p-4 flex items-center justify-between border-l-4 border-l-amber-400 hover:border-slate-300 hover:shadow-sm transition-all duration-150">
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-lg">↩️</span>
-                  <div>
-                    <span className="font-medium text-slate-900">{s.from_user_name}</span>
-                    <span className="text-slate-400 mx-1">paid</span>
-                    <span className="font-medium text-slate-900">{s.to_user_name}</span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-semibold text-slate-900">{formatCurrency(s.amount)}</p>
-                  <p className="text-xs text-slate-400">{s.date}</p>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </>
-      )}
+      <ActivityFeed groupId={groupId} />
     </div>
   )
 }
