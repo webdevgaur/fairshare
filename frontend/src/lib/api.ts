@@ -4,6 +4,7 @@ import { getLocalUser } from './identity'
 import { syncClient } from './sync'
 import { buildActivityFeed } from './feed'
 import { exportJSON, buildCSVBundle, parseJSON, parseSplitwiseCSV, isSplitwiseCSV } from './exportImport'
+import type { ParsedLineItem } from './receipt-parser'
 
 /* ─── Re-export types ─── */
 
@@ -170,6 +171,43 @@ export function createExpense(data: {
   })
 
   return expense
+}
+
+/**
+ * Batch-create one expense per parsed receipt line item (F1).
+ *
+ * Each item becomes its own `createExpense` call → its own fresh `uuid`, so
+ * comments/splits attach individually. Splits for an item default to the
+ * members assigned in `assignments[i]` (equal split); an empty/missing
+ * assignment falls back to every group member. The receipt image is never
+ * passed here — sync carries only structured data, satisfying the F1 privacy
+ * guarantee ("images never leave the device").
+ */
+export function createExpenseFromScan(
+  groupId: number,
+  items: ParsedLineItem[],
+  assignments?: string[][],
+  opts?: { date?: string; category?: string },
+): Expense[] {
+  const members = store.getGroupMembers(groupId)
+  const created: Expense[] = []
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    const assigned =
+      assignments && assignments[i] && assignments[i].length > 0
+        ? assignments[i]
+        : members.map((m) => m.id)
+    const exp = createExpense({
+      group_id: groupId,
+      amount: item.amount,
+      description: item.description,
+      date: opts?.date,
+      category: opts?.category,
+      splits: assigned.map((uid) => ({ user_id: uid })),
+    })
+    created.push(exp)
+  }
+  return created
 }
 
 /* ─── Settlements ─── */
