@@ -6,6 +6,10 @@
  * Provides sign/verify for future sync message authentication.
  */
 import * as ed from '@noble/ed25519'
+import { sha512 } from '@noble/hashes/sha2.js'
+
+// Set up synchronous hash for noble-ed25519 sync API (getPublicKey, sign, etc.)
+ed.hashes.sha512 = sha512
 
 const PRIV_KEY_KEY = 'fairshare_ed25519_priv'
 const PUB_KEY_KEY = 'fairshare_ed25519_pub'

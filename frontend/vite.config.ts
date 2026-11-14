@@ -16,4 +16,10 @@ export default defineConfig({
       '/api': 'http://localhost:3001',
     },
   },
+  optimizeDeps: {
+    // @noble/* packages use exports subpaths that esbuild's dep pre-bundling
+    // fails to resolve (e.g. './sha2' vs './sha2.js'); serving them un-optimized
+    // avoids intermittent dev-server errors. The production build resolves fine.
+    exclude: ['@noble/hashes', '@noble/ed25519'],
+  },
 })
