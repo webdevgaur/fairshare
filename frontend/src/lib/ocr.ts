@@ -39,11 +39,6 @@ declare global {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let workerPromise: Promise<any> | null = null
 
-/** Local model asset path under `public/ocr/`. */
-function assetPath(name: string): string {
-  return `/ocr/${name}`
-}
-
 async function getWorker(onProgress?: (p: OcrProgress) => void): Promise<any> {
   if (!workerPromise) {
     // Dynamic import → the tesseract.js module is only evaluated on first scan.
@@ -52,9 +47,11 @@ async function getWorker(onProgress?: (p: OcrProgress) => void): Promise<any> {
       logger: (m: { status?: string; progress?: number }) => {
         onProgress?.({ status: m.status ?? '', progress: m.progress ?? 0 })
       },
-      workerPath: assetPath('worker.min.js'),
-      corePath: assetPath(''),
-      langPath: assetPath(''),
+      // Uses Tesseract.js CDN defaults for worker/core/language files.
+      // TODO: download these into public/ocr/ for offline-first support:
+      //   workerPath: assetPath('worker.min.js'),
+      //   corePath: assetPath(''),
+      //   langPath: assetPath(''),
     })
   }
   return workerPromise
