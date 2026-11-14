@@ -1,32 +1,141 @@
-# React + TypeScript + Vite
+# FairShare — Frontend (React SPA)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The FairShare web client. A **local-first** single-page app: all data lives in `localStorage`, identity is an Ed25519 keypair, and sync is an optional WebSocket relay.
 
-Currently, two official plugins are available:
+> **App root for all paths below:** `splitwise-clone/frontend/`. See [`../../docs/README.md`](../../docs/README.md) for the architecture overview, and [`../../docs/API_REFERENCE.md`](../../docs/API_REFERENCE.md) for the full `src/lib/*` reference.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Prerequisites
 
-## Expanding the Oxlint configuration
+- **Node.js** 20+ and **npm**
+- **Playwright browsers**: `npx playwright install chromium` (first time only)
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+### Install
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+### Run (dev)
+
+```bash
+npm run dev              # Vite on http://localhost:5173
+```
+
+### Build & preview
+
+```bash
+npm run build            # tsc -b && vite build
+npm run preview          # serve the production build
+```
+
+---
+
+## npm Scripts
+
+| Script | Description |
+|---|---|
+| `npm run dev` | Start the Vite dev server (HMR) |
+| `npm run build` | Type-check (`tsc -b`) then build |
+| `npm run lint` | Run oxlint |
+| `npm run preview` | Serve the production build locally |
+| `npx playwright test` | Run the end-to-end suite (needs a running dev server) |
+
+---
+
+## Feature Overview
+
+| Feature | Status | Where it lives |
+|---|---|---|
+| Identity & Name Prompt | ✅ | [`src/lib/identity.ts`](src/lib/identity.ts) + [`src/lib/crypto.ts`](src/lib/crypto.ts) — Ed25519 keypair, `localStorage` |
+| Dashboard | ✅ | [`src/pages/Dashboard.tsx`](src/pages/Dashboard.tsx) |
+| Groups, Expenses, Settlements | ✅ | [`src/pages/GroupPage.tsx`](src/pages/GroupPage.tsx) + [`src/lib/engine.ts`](src/lib/engine.ts) |
+| Balance engine & debt simplification | ✅ | [`src/lib/engine.ts`](src/lib/engine.ts) |
+| Sync indicator (offline/online) | ✅ | [`src/lib/sync.ts`](src/lib/sync.ts) + [`src/pages/Dashboard.tsx`](src/pages/Dashboard.tsx) |
+| **F4** — Payment Links | ✅ | [`src/lib/paymentLinks.ts`](src/lib/paymentLinks.ts) + [`src/pages/Profile.tsx`](src/pages/Profile.tsx) |
+| **F6** — Comments & Activity Feed | ✅ | [`src/lib/feed.ts`](src/lib/feed.ts), [`src/components/ActivityFeed.tsx`](src/components/ActivityFeed.tsx), [`src/components/ExpenseComments.tsx`](src/components/ExpenseComments.tsx), [`src/lib/notifications.ts`](src/lib/notifications.ts) |
+| **F5** — Export / Import | ✅ | [`src/lib/exportImport.ts`](src/lib/exportImport.ts) + [`src/pages/Profile.tsx`](src/pages/Profile.tsx) |
+| **F3** — Spending Insights & Analytics | ✅ | [`src/lib/engine.ts`](src/lib/engine.ts) `computeAnalytics` + the `SpendingInsights` section in [`src/pages/Dashboard.tsx`](src/pages/Dashboard.tsx) (hand-built donut + bar charts) |
+| **F1** — OCR Receipt Scanning | 🔄 Analysis only | See [`../../docs/F1_OCR_MOBILE_ANALYSIS.md`](../../docs/F1_OCR_MOBILE_ANALYSIS.md) |
+
+---
+
+## Test Suite
+
+The suite is **Playwright end-to-end** against the dev server (`http://localhost:5173`). It has **59 tests across 11 spec files** and no unit tests — the logic is exercised through the browser UI and via seeded `localStorage`.
+
+### Run the whole suite
+
+```bash
+npm run dev &        # keep the dev server running
+npx playwright test
+```
+
+Or run a build instead: `npm run build && npm run preview`.
+
+### Run a single file / name
+
+```bash
+npx playwright test tests/comments.spec.ts
+npx playwright test --grep "F3"       # by test-name substring
+```
+
+### Per-file coverage
+
+| Spec | Tests | Covers |
+|---|---|---|
+| `tests/identity.spec.ts` | 6 | Identity prompt, fingerprint, persistence |
+| `tests/dashboard.spec.ts` | 6 | Summary cards, group list, navigation |
+| `tests/navigation.spec.ts` | 6 | Routing between pages |
+| `tests/expenses.spec.ts` | 6 | Equal + custom splits |
+| `tests/settlements.spec.ts` | 3 | Record settlements, balance updates |
+| `tests/comments.spec.ts` | 6 | Expense comments / threads |
+| `tests/activity-feed.spec.ts` | 5 | Reverse-chronological feed, date headers |
+| `tests/paymentLinks.spec.ts` | 3 | Venmo / PayPal / Cash App deep links |
+| `tests/exportImport.spec.ts` | 11 | JSON round-trip, CSV, Splitwise import |
+| `tests/analytics.spec.ts` | 4 | Spending insights, category breakdown |
+| `tests/sync.spec.ts` | 3 | CRDT sync, offline queue |
+| **Total** | **59** | |
+
+### Helpers in `tests/setup.ts`
+
+| Helper | Purpose |
+|---|---|
+| `clearStorage(page)` | Wipe `fairshare_*` localStorage keys |
+| `seedIdentity(page, name)` | Seed local identity so the name prompt is skipped; returns the fingerprint |
+| `seedGroup(page, name, desc, members)` | Create a group via the store; returns `group_id` |
+| `seedExpense(page, groupId, desc, amount, opts?)` | Create an expense (equal split); optional `{ category?, date? }`; returns `{ id, uuid }` |
+| `seedComment(page, groupId, expenseId, expenseUuid, text)` | Seed a comment keyed by expense `uuid` |
+| `seedSettlement(page, groupId, amount)` | Create a settlement |
+| `gotoApp(page, path)` | Navigate to `BASE_URL` + path and wait for `networkidle` |
+
+> **Convention:** always call `clearStorage` in `beforeEach`. Comment/analytics seeds rely on the expense carrying a stable `uuid` so they attach across devices.
+
+---
+
+## Structure
+
+```
+src/
+├── App.tsx              Router + Layout + NamePrompt gate
+├── main.tsx             React entry
+├── pages/               Dashboard, GroupPage, Profile
+├── components/          ActivityFeed, ExpenseComments, ui/*
+└── lib/                 All business logic (see ../../docs/API_REFERENCE.md)
+    ├── api.ts           UI facade — the only entry point
+    ├── engine.ts        Types + balance engine + analytics
+    ├── store.ts         LocalStore (localStorage)
+    ├── sync.ts          CRDT SyncClient
+    ├── feed.ts          Activity-feed builder
+    ├── paymentLinks.ts  Deep-link builders (F4)
+    ├── exportImport.ts  JSON / CSV export + import (F5)
+    ├── identity.ts      Local user (name + fingerprint)
+    ├── crypto.ts        Ed25519 keypair (sign/verify)
+    ├── notifications.ts Browser Notification wrapper
+    └── utils.ts         cn() helper re-export
+```
+
+> **Note on `@noble/*`:** `vite.config.ts` excludes `@noble/hashes` and `@noble/ed25519` from dependency pre-bundling because their subpath exports (e.g. `./sha2` vs `./sha2.js`) fail during esbuild dep optimisation. Do not remove that exclusion unless you've verified the production build resolves.
