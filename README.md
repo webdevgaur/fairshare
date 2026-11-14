@@ -23,7 +23,7 @@ Built with [agency-agents](https://github.com/msitarzewski/agency-agents) specia
 | **F6** — Comments & Activity Feed | ✅ Done | Threaded comments per expense (stable `uuid`), reverse-chronological feed with date headers, local browser notifications. |
 | **F5** — Export / Import | ✅ Done | JSON round-trip (merge-by-uuid), CSV export, Splitwise CSV import, formula-injection protection. |
 | **F3** — Spending Insights & Analytics | ✅ Done | Category breakdown, monthly spending, this-month / last-month / all-time cards, hand-built charts, on-read computation. |
-| **F1** — OCR Receipt Scanning | 🔄 Analysis | Design complete in [`docs/F1_OCR_MOBILE_ANALYSIS.md`](../docs/F1_OCR_MOBILE_ANALYSIS.md); not built yet. |
+| **F1** — Receipt Scanning & OCR | ✅ Done | On-device Tesseract.js v5 (WASM, lazy-loaded on first scan); heuristic parser extracts merchant / date / total / line items; receipt image stored in IndexedDB (never leaves device); review-and-assign grid before batch-creating expenses; falls back to manual entry if OCR fails. |
 
 **Roadmap:** the PRD ([`../PRD_FairShare.md`](../PRD_FairShare.md)) defines seven features (F1–F7). **F2** (Recurring Expenses) and **F7** (Multi-Currency Travel Mode) remain unbuilt.
 
@@ -138,7 +138,7 @@ On first visit you'll be prompted for a name; this seeds the local identity. The
 ```bash
 cd frontend
 npm run dev &                   # keep the dev server running
-npx playwright test             # 59 E2E tests across 11 spec files
+npx playwright test             # 63 E2E tests across 12 spec files
 ```
 
 ---
@@ -157,7 +157,7 @@ Full docs live in the sibling [`docs/`](../docs/README.md) directory (at the wor
 | [`docs/ADR-F5-EXPORT-IMPORT.md`](../docs/ADR-F5-EXPORT-IMPORT.md) | ADR-0003 — F5 Export / Import (accepted) |
 | [`docs/ADR-F3-ANALYTICS.md`](../docs/ADR-F3-ANALYTICS.md) | ADR — F3 Spending Insights & Analytics (proposed) |
 | [`docs/F5_USER_GUIDE.md`](../docs/F5_USER_GUIDE.md) | User guide for Export / Import (F5) |
-| [`docs/F1_OCR_MOBILE_ANALYSIS.md`](../docs/F1_OCR_MOBILE_ANALYSIS.md) | F1 OCR implementation analysis (not yet built) |
+| [`docs/F1_OCR_MOBILE_ANALYSIS.md`](../docs/F1_OCR_MOBILE_ANALYSIS.md) | F1 OCR mobile implementation analysis (the web path is shipped via Tesseract.js; mobile needs a separate Vision / ML Kit native module) |
 
 Workflow / product docs (also at the workspace root, outside the git repo):
 
