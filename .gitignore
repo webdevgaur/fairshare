@@ -3,6 +3,9 @@ backend/target/
 backend/*.db
 backend/.env
 
+# Relay server
+relay-server/target/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
