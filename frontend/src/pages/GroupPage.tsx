@@ -6,6 +6,7 @@ import {
   getGroupBalances,
   getGroupMembers,
   createExpense,
+  createExpenseFromScan,
   createSettlement,
   getCurrentUserId,
   getSuggestedSettlements,
@@ -15,6 +16,11 @@ import {
 import type { BalanceEntry, Transaction } from '../lib/api'
 import { buildPaymentLink, type PaymentProvider } from '../lib/paymentLinks'
 import ActivityFeed from '@/components/ActivityFeed'
+import ReceiptScanner from '@/components/ReceiptScanner'
+import ReceiptReview from '@/components/ReceiptReview'
+import { parseReceipt, type ParsedReceipt, type ParsedLineItem } from '../lib/receipt-parser'
+import { putReceipt } from '../lib/receipt-store'
+import type { OcrResult } from '../lib/receipt-parser'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
@@ -75,6 +81,11 @@ export default function GroupPage() {
   const [settleAmount, setSettleAmount] = useState('')
   const [settleProvider, setSettleProvider] = useState<PaymentProvider>('venmo')
   const [suggestedTxns, setSuggestedTxns] = useState<Transaction[]>([])
+
+  // Receipt scan flow (F1)
+  const [scanStage, setScanStage] = useState<'idle' | 'capture' | 'review'>('idle')
+  const [scanImage, setScanImage] = useState<Blob | null>(null)
+  const [scanParsed, setScanParsed] = useState<ParsedReceipt | null>(null)
 
   const currentUserId = getCurrentUserId()
 
@@ -186,6 +197,41 @@ export default function GroupPage() {
       setSettleAmount(String(t.amount))
       setShowSettle(true)
     }
+  }
+
+  function handleScan(image: Blob, result: OcrResult) {
+    const parsed = parseReceipt(result)
+    setScanImage(image)
+    setScanParsed(parsed)
+    setScanStage('review')
+  }
+
+  function handleScanCreate(items: ParsedLineItem[], assignments: string[][], opts: { date?: string }) {
+    const created = createExpenseFromScan(groupId, items, assignments, { date: opts.date })
+    // Persist the image in IndexedDB (best-effort — the structured expense is
+    // the source of truth; a failed image write must not block creation).
+    if (scanImage) {
+      const scanId = crypto.randomUUID()
+      void putReceipt({
+        id: scanId,
+        groupId,
+        createdAt: new Date().toISOString(),
+        image: scanImage,
+        merchant: scanParsed?.merchant,
+        date: opts.date,
+        expenseUuids: created.map((e) => e.uuid),
+      }).catch(() => {})
+    }
+    setBalances(getGroupBalances(groupId).balances)
+    setScanStage('idle')
+    setScanImage(null)
+    setScanParsed(null)
+  }
+
+  function handleScanCancel() {
+    setScanStage('idle')
+    setScanImage(null)
+    setScanParsed(null)
   }
 
   if (loading) {
@@ -332,7 +378,32 @@ export default function GroupPage() {
         >
           Settle Up
         </Button>
+        <Button
+          variant="outline"
+          onClick={() => {
+            setShowExpense(false)
+            setShowSettle(false)
+            setScanStage('capture')
+          }}
+          className="w-full sm:flex-1 bg-white"
+          data-testid="scan-receipt-button"
+        >
+          Scan Receipt
+        </Button>
       </div>
+
+      {/* Receipt scan flow (F1) */}
+      {scanStage === 'capture' && (
+        <ReceiptScanner onScan={handleScan} onCancel={handleScanCancel} />
+      )}
+      {scanStage === 'review' && scanParsed && (
+        <ReceiptReview
+          receipt={scanParsed}
+          members={members}
+          onCreate={handleScanCreate}
+          onCancel={handleScanCancel}
+        />
+      )}
 
       {/* Add expense form */}
       {showExpense && (
