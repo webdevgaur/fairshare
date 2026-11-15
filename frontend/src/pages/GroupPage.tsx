@@ -494,7 +494,7 @@ export default function GroupPage() {
           <form onSubmit={handleSettle} className="p-4 space-y-3">
             <Select
               value={settleFrom}
-              onValueChange={(value) => setSettleFrom(value)}
+              onValueChange={(value) => setSettleFrom(value ?? '')}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Who's paying?" />
@@ -511,7 +511,7 @@ export default function GroupPage() {
             </Select>
             <Select
               value={settleTo}
-              onValueChange={(value) => setSettleTo(value)}
+              onValueChange={(value) => setSettleTo(value ?? '')}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Who's getting paid?" />

@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FairShare — Dashboard</title>
+<!-- Tailwind (Play CDN) + shadcn/us components (CDN stylesheets) — no build step -->
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/theme/default-semantic-tokens.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/button/button.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/card/card.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/tabs/tabs.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/avatar/avatar.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/sheet/sheet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/input/input.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/label/label.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/badge/badge.css">
+<style>
+  :root { --green:#16a34a; --rose:#e11d48; --amber:#f59e0b; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; -webkit-font-smoothing:antialiased; background:linear-gradient(180deg,#f8fafc,#f1f5f9); min-height:100vh; color:#1a1a1a; }
+  .fade-in { animation:fade .22s ease; } @keyframes fade { from{opacity:0;transform:translateY(6px)} to{opacity:1} }
+  details > summary{list-style:none} details > summary::-webkit-details-marker{display:none}
+  ::-webkit-scrollbar{height:8px} ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px}
+  .tab-trigger{min-height:44px}
+  .sheet[data-side="bottom"]{ width:100%; max-width:100vh; border-radius:1.25rem 1.25rem 0 0; }
+  .sheet::backdrop{background:oklch(0 0 0/.45); backdrop-filter:blur(3px);}
+  .btn:active{transform:scale(.97)} .btn{transition:transform .12s ease, opacity .12s ease}
+</style>
+</head>
+<body>
+
+<!-- App header -->
+<header class="sticky top-0 z-30 bg-white/85 backdrop-blur border-b border-slate-200">
+  <div class="px-4 h-14 flex items-center justify-between max-w-5xl mx-auto">
+    <div class="flex items-center gap-2.5">
+      <div class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-slate-900 text-white text-lg font-bold">÷</div>
+      <span class="text-lg font-bold tracking-tight text-slate-900">FairShare</span>
+      <span class="hidden sm:inline-flex items-center gap-1.5 ml-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Local-first</span>
+    </div>
+    <button class="btn" data-variant="ghost" data-size="icon" onclick="showTab('profile')" aria-label="Profile"><span class="text-lg leading-none">👤</span></button>
+  </div>
+</header>
+
+<!-- ===== HOME (the dashboard) ===== -->
+<main id="view-home" class="viewblock max-w-5xl mx-auto px-4 pt-5 pb-28 space-y-6">
+  <section>
+    <h1 class="text-2xl font-bold tracking-tight text-slate-900">Hey Anurag 👋</h1>
+    <p class="text-slate-500 text-sm mt-0.5">Here's where your money stands today.</p>
+    <div class="grid grid-cols-2 gap-3 mt-4">
+      <div class="card data-card"><div class="card-content"><p class="text-xs font-semibold text-emerald-700 tracking-wide">You're owed</p><p class="text-2xl font-bold text-emerald-700 mt-1">$54.75</p><p class="text-xs text-emerald-600/80 mt-1">2 groups</p></div></div>
+      <div class="card data-card"><div class="card-content"><p class="text-xs font-semibold text-rose-700 tracking-wide">You owe</p><p class="text-2xl font-bold text-rose-700 mt-1">$180.00</p><p class="text-xs text-rose-600/80 mt-1">1 group</p></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider"><span class="inline-block w-0.5 h-3.5 rounded-full bg-emerald-300"></span> Your groups</h2>
+      <button class="btn" data-variant="ghost" data-size="sm" onclick="openSheet('addGroupSheet')">+ New</button>
+    </div>
+    <div class="md:grid md:grid-cols-3 md:gap-3 flex gap-3 overflow-x-auto pb-2 snap-x">
+      <div class="card shrink-0 w-64 md:w-auto snap-start" onclick="showTab('groups')"><div class="card-content">
+        <div class="flex -space-x-2">
+          <span class="w-7 h-7 rounded-full bg-indigo-400 ring-2 ring-white flex items-center justify-center text-[10px] font-bold text-white">S</span>
+          <span class="w-7 h-7 rounded-full bg-rose-400 ring-2 ring-white flex items-center justify-center text-[10px] font-bold text-white">P</span>
+          <span class="w-7 h-7 rounded-full bg-amber-400 ring-2 ring-white flex items-center justify-center text-[10px] font-bold text-white">J</span>
+          <span class="w-7 h-7 rounded-full bg-slate-900 ring-2 ring-white flex items-center justify-center text-[10px] font-bold text-white">A</span>
+        </div>
+        <h3 class="font-semibold text-slate-900 mt-3">Roommates</h3>
+        <p class="text-sm text-emerald-600 font-semibold mt-1">You're owed $42.50</p>
+        <p class="text-xs text-slate-400 mt-3">÷ 4 people · 12 expenses</p>
+      </div></div>
+      <div class="card shrink-0 w-64 md:w-auto snap-start" onclick="showTab('groups')"><div class="card-content">
+        <div class="flex -space-x-2">
+          <span class="w-7 h-7 rounded-full bg-sky-400 ring-2 ring-white flex items-center justify-center text-[10px] font-bold text-white">M</span>
+          <span class="w-7 h-7 rounded-full bg-emerald-400 ring-2 ring-white flex items-center justify-center text-[10px] font-bold text-white">K</span>
+          <span class="w-7 h-7 rounded-full bg-purple-400 ring-2 ring-white flex items-center justify-center text-[10px] font-bold text-white">R</span>
+        </div>
+        <h3 class="font-semibold text-slate-900 mt-3">Japan Trip 2026</h3>
+        <p class="text-sm text-rose-600 font-semibold mt-1">You owe $180.00</p>
+        <p class="text-xs text-slate-400 mt-3">✈️ Mar 2–16 · 8 expenses</p>
+      </div></div>
+      <div class="card shrink-0 w-64 md:w-auto snap-start" onclick="showTab('groups')"><div class="card-content">
+        <div class="flex -space-x-2">
+          <span class="w-7 h-7 rounded-full bg-teal-400 ring-2 ring-white flex items-center justify-center text-[10px] font-bold text-white">D</span>
+          <span class="w-7 h-7 rounded-full bg-orange-400 ring-2 ring-white flex items-center justify-center text-[10px] font-bold text-white">L</span>
+          <span class="w-7 h-7 rounded-full bg-slate-900 ring-2 ring-white flex items-center justify-center text-[10px] font-bold text-white">A</span>
+        </div>
+        <h3 class="font-semibold text-slate-900 mt-3">Team Lunch</h3>
+        <p class="text-sm text-slate-500 font-medium mt-1">All settled 🎉</p>
+        <p class="text-xs text-slate-400 mt-3">🍜 Fridays · 6 expenses</p>
+      </div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider"><span class="inline-block w-0.5 h-3.5 rounded-full bg-amber-300"></span> This month</h2>
+      <button class="btn" data-variant="ghost" data-size="sm" onclick="showTab('analytics')">View →</button>
+    </div>
+    <div class="grid grid-cols-3 gap-2 md:gap-3">
+      <div class="card"><div class="card-content"><p class="text-[11px] text-slate-500 font-medium">Spent</p><p class="text-lg md:text-2xl font-bold text-slate-900 mt-1">$312</p><p class="text-[10px] text-slate-400 mt-1">↑ 12%</p></div></div>
+      <div class="card"><div class="card-content"><p class="text-[11px] text-slate-500 font-medium">Top cat.</p><p class="text-lg md:text-2xl font-bold text-slate-900 mt-1">🍕</p><div class="w-full h-1.5 bg-slate-100 rounded-full mt-2"><div class="w-[38%] h-full bg-amber-400 rounded-full"></div></div></div></div>
+      <div class="card"><div class="card-content"><p class="text-[11px] text-slate-500 font-medium">Owed to you</p><p class="text-lg md:text-2xl font-bold text-slate-900 mt-1">$54</p><p class="text-[10px] text-slate-400 mt-1">2 pending</p></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider"><span class="inline-block w-0.5 h-3.5 rounded-full bg-slate-300"></span> Activity</h2>
+      <div class="tab-list" data-variant="line">
+        <button class="tab-trigger" data-f="all" aria-selected="true" onclick="setFilter('all')">All</button>
+        <button class="tab-trigger" data-f="expense" aria-selected="false" onclick="setFilter('expense')">Expenses</button>
+        <button class="tab-trigger" data-f="settlement" aria-selected="false" onclick="setFilter('settlement')">Settlements</button>
+      </div>
+    </div>
+    <div class="space-y-3">
+
+      <div class="feed-item card" data-type="expense">
+        <div class="card-content">
+          <p class="text-[11px] text-slate-400 font-medium mb-1.5">Today · 6:42 PM</p>
+          <div class="flex items-start gap-3">
+            <span class="text-2xl">🍕</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-start justify-between gap-2"><h3 class="font-semibold text-slate-900">Dinner at Olio</h3><span class="font-bold text-slate-900">$85.40</span></div>
+              <p class="text-xs text-slate-500 mt-0.5">Paid by Sam Carter · Roommates · Food</p>
+              <div class="flex items-center gap-2 mt-2">
+                <span class="badge" style="background:#16a34a;color:#fff">You owe $21.35</span>
+                <button class="btn" data-variant="ghost" data-size="sm" onclick="toggleSplits(this)">Show ▾</button>
+              </div>
+              <details class="mt-3 pt-3 border-t border-slate-100"><summary class="hidden"></summary>
+                <div class="text-xs text-slate-500 space-y-1">
+                  <div class="flex justify-between"><span>Sam Carter · paid</span><span>$85.40</span></div>
+                  <div class="flex justify-between"><span>Priya Patel</span><span>$21.35</span></div>
+                  <div class="flex justify-between"><span>Jake Nguyen</span><span>$21.35</span></div>
+                  <div class="flex justify-between"><span class="font-medium text-slate-900">Anurag Gaur <span class="ml-1 inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-700">you</span></span><span>$21.35</span></div>
+                </div></details>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="feed-item card" data-type="settlement">
+        <div class="card-content">
+          <p class="text-[11px] text-slate-400 font-medium mb-1.5">Today · 3:10 PM</p>
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">🤝</span>
+            <div class="flex-1"><h3 class="font-semibold text-slate-900">Priya Patel settled up</h3><p class="text-xs text-slate-500 mt-0.5">Paid you <span class="font-medium text-emerald-700">$21.35</span> via Venmo</p></div>
+            <span class="text-emerald-600 font-semibold">✓</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="feed-item card" data-type="expense">
+        <div class="card-content">
+          <p class="text-[11px] text-slate-400 font-medium mb-1.5">Yesterday · 8:22 PM</p>
+          <div class="flex items-start gap-3">
+            <span class="text-2xl">🛒</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-start justify-between gap-2"><h3 class="font-semibold text-slate-900">Grocery run</h3><span class="font-bold text-slate-900">$62.30</span></div>
+              <p class="text-xs text-slate-500 mt-0.5">Paid by you · Roommates · Groceries</p>
+              <div class="flex items-center gap-2 mt-2"><span class="badge" style="background:#16a34a;color:#fff">You're owed $46.73</span><button class="btn" data-variant="ghost" data-size="sm" onclick="toggleSplits(this)">Show ▾</button></div>
+              <details class="mt-3 pt-3 border-t border-slate-100"><summary class="hidden"></summary>
+                <div class="text-xs text-slate-500 space-y-1">
+                  <div class="flex justify-between"><span class="font-medium text-slate-900">Anurag Gaur <span class="ml-1 inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-700">you</span></span><span>$62.30</span></div>
+                  <div class="flex justify-between"><span>Sam Carter</span><span>$15.58</span></div>
+                  <div class="flex justify-between"><span>Priya Patel</span><span>$15.58</span></div>
+                  <div class="flex justify-between"><span>Jake Nguyen</span><span>$15.57</span></div>
+                </div></details>
+              <div class="mt-3 pl-3 border-l-2 border-slate-100 space-y-2">
+                <div class="flex gap-2 items-start">
+                  <span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#fda4af;color:#fff">P</span></span>
+                  <div><p class="text-xs text-slate-500"><span class="font-medium text-slate-700">Priya Patel</span> · 2h</p><p class="text-xs text-slate-700">Can we split the dish soap separately? I still have a full bottle 😅</p></div>
+                </div>
+                <div class="flex gap-2 items-start">
+                  <span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#0f172a;color:#fff">A</span></span>
+                  <div><p class="text-xs text-slate-500"><span class="font-medium text-slate-700">You</span> · 1h</p><p class="text-xs text-slate-700">Haha deal — next one I'll exclude it 👍</p><button class="btn" data-variant="ghost" data-size="xs" onclick="toast('Reply box (demo)')">Reply</button></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="feed-item card" data-type="settlement">
+        <div class="card-content">
+          <p class="text-[11px] text-slate-400 font-medium mb-1.5">Yesterday · 1:15 PM</p>
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">💸</span>
+            <div class="flex-1"><h3 class="font-semibold text-slate-900">You owe Jake Nguyen</h3><p class="text-xs text-slate-500 mt-0.5">You owe <span class="font-medium text-rose-600">$24.00</span> · Team Lunch</p><button class="btn" data-variant="ghost" data-size="sm" onclick="openSheet('settleSheet')">Settle up →</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="feed-item card" data-type="expense">
+        <div class="card-content">
+          <p class="text-[11px] text-slate-400 font-medium mb-1.5">Nov 11 · 9:05 AM</p>
+          <div class="flex items-start gap-3">
+            <span class="text-2xl">🚕</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-start justify-between gap-2"><h3 class="font-semibold text-slate-900">Uber to the airport</h3><span class="font-bold text-slate-900">$34.00</span></div>
+              <p class="text-xs text-slate-500 mt-0.5">Paid by Maya Lin · Japan Trip 2026 · Transport</p>
+              <div class="flex items-center gap-2 mt-2"><span class="badge" style="background:#e11d48;color:#fff">You owe $11.33</span><button class="btn" data-variant="ghost" data-size="sm" onclick="toggleSplits(this)">Show ▾</button></div>
+              <details class="mt-3 pt-3 border-t border-slate-100"><summary class="hidden"></summary>
+                <div class="text-xs text-slate-500 space-y-1">
+                  <div class="flex justify-between"><span>Maya Lin · paid</span><span>$34.00</span></div>
+                  <div class="flex justify-between"><span>Kenji Sato</span><span>$11.33</span></div>
+                  <div class="flex justify-between"><span class="font-medium text-slate-900">Anurag Gaur <span class="ml-1 inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-700">you</span></span><span>$11.33</span></div>
+                </div></details>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ===== GROUPS ===== -->
+<main id="view-groups" class="viewblock hidden max-w-5xl mx-auto px-4 pt-5 pb-28 space-y-5">
+  <div class="flex items-center justify-between"><h1 class="text-2xl font-bold tracking-tight text-slate-900">Groups</h1><button class="btn" data-size="lg" onclick="openSheet('addGroupSheet')">+ New group</button></div>
+  <div class="space-y-3 md:grid md:grid-cols-3 md:gap-3 md:space-y-0">
+    <div class="card" onclick="toast('Opening Roommates')"><div class="card-content"><h3 class="font-semibold text-slate-900">Roommates</h3><p class="text-sm text-emerald-600 font-semibold mt-1">You're owed $42.50</p><div class="flex -space-x-2 mt-3"><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#818cf8;color:#fff">S</span></span><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#fda4af;color:#fff">P</span></span><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#fcd34d;color:#fff">J</span></span><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#0f172a;color:#fff">A</span></span></div></div></div>
+    <div class="card" onclick="toast('Opening Japan Trip 2026')"><div class="card-content"><h3 class="font-semibold text-slate-900">Japan Trip 2026</h3><p class="text-sm text-rose-600 font-semibold mt-1">You owe $180.00</p><div class="flex -space-x-2 mt-3"><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#38bdf8;color:#fff">M</span></span><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#34d399;color:#fff">K</span></span><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#c084fc;color:#fff">R</span></span></div></div></div>
+    <div class="card" onclick="toast('Opening Team Lunch')"><div class="card-content"><h3 class="font-semibold text-slate-900">Team Lunch</h3><p class="text-sm text-slate-500 font-medium mt-1">All settled 🎉</p><div class="flex -space-x-2 mt-3"><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#2dd4bf;color:#fff">D</span></span><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#fb923c;color:#fff">L</span></span><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#0f172a;color:#fff">A</span></span></div></div></div>
+  </div>
+  <button class="btn" data-variant="outline" data-size="lg" class="w-full" onclick="openSheet('importSheet')">Import from Splitwise CSV / JSON backup</button>
+</main>
+
+<!-- ===== ANALYTICS ===== -->
+<main id="view-analytics" class="viewblock hidden max-w-5xl mx-auto px-4 pt-5 pb-28 space-y-5">
+  <h1 class="text-2xl font-bold tracking-tight text-slate-900">Analytics</h1>
+  <div class="grid grid-cols-2 gap-3">
+    <div class="card"><div class="card-content"><p class="text-xs text-slate-500 font-medium">This month</p><p class="text-2xl font-bold text-slate-900 mt-1">$312.40</p></div></div>
+    <div class="card"><div class="card-content"><p class="text-xs text-slate-500 font-medium">All time</p><p class="text-2xl font-bold text-slate-900 mt-1">$1,842.10</p></div></div>
+  </div>
+  <div class="card"><div class="card-content">
+    <p class="text-sm font-semibold text-slate-900 mb-3">By category</p>
+    <div class="flex items-center gap-4">
+      <div class="w-24 h-24 rounded-full shrink-0" style="background:conic-gradient(#f59e0b 0% 38%, #16a34a 38% 58%, #0ea5e9 58% 78%, #e11d48 78% 100%)"></div>
+      <div class="text-xs text-slate-600 space-y-1.5">
+        <div><span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 mr-1.5"></span>Food · 38% · $118.70</div>
+        <div><span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1.5"></span>Groceries · 20% · $62.30</div>
+        <div><span class="inline-block w-2.5 h-2.5 rounded-full bg-sky-500 mr-1.5"></span>Transport · 20% · $62.40</div>
+        <div><span class="inline-block w-2.5 h-2.5 rounded-full bg-rose-500 mr-1.5"></span>Fun · 22% · $69.00</div>
+      </div>
+    </div>
+  </div></div>
+  <div class="card"><div class="card-content">
+    <p class="text-sm font-semibold text-slate-900 mb-3">Monthly spending</p>
+    <div class="flex items-end justify-between gap-2 h-24">
+      <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-slate-200 rounded-t" style="height:40%"></div><span class="text-[10px] text-slate-400">Jun</span></div>
+      <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-slate-200 rounded-t" style="height:52%"></div><span class="text-[10px] text-slate-400">Jul</span></div>
+      <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-slate-200 rounded-t" style="height:35%"></div><span class="text-[10px] text-slate-400">Aug</span></div>
+      <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-slate-200 rounded-t" style="height:60%"></div><span class="text-[10px] text-slate-400">Sep</span></div>
+      <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-slate-200 rounded-t" style="height:48%"></div><span class="text-[10px] text-slate-400">Oct</span></div>
+      <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-amber-400 rounded-t" style="height:78%"></div><span class="text-[10px] text-amber-600 font-medium">Nov</span></div>
+    </div>
+  </div></div>
+</main>
+
+<!-- ===== PROFILE ===== -->
+<main id="view-profile" class="viewblock hidden max-w-5xl mx-auto px-4 pt-5 pb-28 space-y-5">
+  <h1 class="text-2xl font-bold tracking-tight text-slate-900">Profile</h1>
+  <div class="card"><div class="card-content flex items-center gap-4">
+    <span class="avatar" data-size="lg"><span class="avatar-fallback" style="background:linear-gradient(135deg,#6366f1,#7c3aed);color:#fff;font-weight:700">A</span></span>
+    <div><p class="font-semibold text-slate-900">Anurag Gaur</p><p class="text-xs text-slate-500 mt-0.5">Ed25519 fingerprint</p><p class="text-[11px] font-mono text-slate-400 mt-0.5">a3f9·2c7e·b81d·f04e</p></div>
+  </div></div>
+  <div class="card"><div class="card-content space-y-4">
+    <div class="grid gap-1"><label class="label">Name</label><input class="input" value="Anurag Gaur" /></div>
+    <div class="grid gap-1"><label class="label">Payment handles</label><input class="input" placeholder="Venmo: @anurag-gaur" /><input class="input" placeholder="Cash App: $anurag" /></div>
+  </div></div>
+  <button class="btn" data-variant="outline" data-size="lg" style="width:100%;color:#dc2626;border-color:#dc2626" onclick="toast('Identity reset (demo)')">Reset identity &amp; data</button>
+</main>
+
+<!-- Bottom tab bar -->
+<nav class="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200">
+  <div class="max-w-5xl mx-auto grid grid-cols-4">
+    <button class="tabbtn flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-slate-400" data-tab="home" onclick="showTab('home')"><span class="text-xl leading-none">🏠</span><span class="text-[11px] font-medium">Home</span></button>
+    <button class="tabbtn flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-slate-400" data-tab="groups" onclick="showTab('groups')"><span class="text-xl leading-none">👥</span><span class="text-[11px] font-medium">Groups</span></button>
+    <button class="tabbtn flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-slate-400" data-tab="analytics" onclick="showTab('analytics')"><span class="text-xl leading-none">📊</span><span class="text-[11px] font-medium">Analytics</span></button>
+    <button class="tabbtn flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-slate-400" data-tab="profile" onclick="showTab('profile')"><span class="text-xl leading-none">👤</span><span class="text-[11px] font-medium">Profile</span></button>
+  </div>
+</nav>
+
+<!-- Sheets -->
+<dialog id="settleSheet" class="sheet" data-side="bottom">
+  <div class="sheet-header"><h2 class="sheet-title text-xl font-bold text-slate-900 flex items-center justify-between">Settle up<button class="btn" data-variant="ghost" data-size="icon" onclick="closeSheet('settleSheet')">✕</button></h2></div>
+  <div class="px-6 pb-6">
+    <p class="text-sm text-slate-500">You owe <span class="font-medium text-slate-900">Jake Nguyen</span> <span class="font-bold text-rose-600">$24.00</span> · Team Lunch</p>
+    <div class="mt-4 grid gap-2">
+      <a class="btn" data-variant="outline" data-size="lg" style="justify-content:flex-start;width:100%" href="venmo://pay?recipients=jake&amount=24.00&note=FairShare%20settle"><span class="w-5 h-5 rounded bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">V</span> Venmo</a>
+      <a class="btn" data-variant="outline" data-size="lg" style="justify-content:flex-start;width:100%" href="paypal://send?amount=24.00"><span class="w-5 h-5 rounded bg-sky-600 text-white text-[10px] font-bold flex items-center justify-center">P</span> PayPal</a>
+      <a class="btn" data-variant="outline" data-size="lg" style="justify-content:flex-start;width:100%" href="cash://pay/jake/24.00"><span class="w-5 h-5 rounded bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">$</span> Cash App</a>
+    </div>
+    <button class="btn" data-size="lg" style="width:100%;margin-top:1rem" onclick="markSettled()">Mark as settled ✓</button>
+  </div>
+</dialog>
+
+<dialog id="addSheet" class="sheet" data-side="bottom">
+  <div class="sheet-header"><h2 class="sheet-title text-xl font-bold text-slate-900 flex items-center justify-between">Add expense<button class="btn" data-variant="ghost" data-size="icon" onclick="closeSheet('addSheet')">✕</button></h2></div>
+  <div class="px-6 pb-6 grid gap-3">
+    <div class="grid gap-1"><label class="label">Description</label><input class="input" value="Dinner at Olio" /></div>
+    <div class="grid grid-cols-2 gap-3"><div class="grid gap-1"><label class="label">Amount</label><input class="input" value="85.40" /></div><div class="grid gap-1"><label class="label">Group</label><select class="input"><option>Roommates</option><option>Japan Trip 2026</option><option>Team Lunch</option></select></div></div>
+    <div class="flex flex-wrap gap-1.5"><span class="badge" style="background:#f59e0b;color:#fff">🍕 Food</span><span class="badge" data-variant="outline">🛒 Groceries</span><span class="badge" data-variant="outline">🚕 Transport</span><span class="badge" data-variant="outline">🎟️ Fun</span></div>
+    <div class="grid grid-cols-2 gap-2"><button class="btn" data-size="lg" onclick="setSplit(this,'equal')">Equal</button><button class="btn" data-variant="secondary" data-size="lg" onclick="setSplit(this,'custom')">Custom</button></div>
+    <div class="grid grid-cols-2 gap-2"><button class="btn" data-variant="outline" data-size="lg" onclick="closeSheet('addSheet')">Cancel</button><button class="btn" data-size="lg" onclick="closeSheet('addSheet');toast('Expense added')">Save</button></div>
+  </div>
+</dialog>
+
+<dialog id="addGroupSheet" class="sheet" data-side="bottom">
+  <div class="sheet-header"><h2 class="sheet-title text-xl font-bold text-slate-900 flex items-center justify-between">New group<button class="btn" data-variant="ghost" data-size="icon" onclick="closeSheet('addGroupSheet')">✕</button></h2></div>
+  <div class="px-6 pb-6 grid gap-3">
+    <div class="grid gap-1"><label class="label">Group name</label><input class="input" placeholder="Weekend Ski Trip" /></div>
+    <div class="grid gap-1"><label class="label">Members (comma separated)</label><input class="input" placeholder="Sam Carter, Priya Patel, Jake Nguyen" /></div>
+    <button class="btn" data-size="lg" onclick="closeSheet('addGroupSheet');toast('Group created')">Create group</button>
+  </div>
+</dialog>
+
+<dialog id="importSheet" class="sheet" data-side="bottom">
+  <div class="sheet-header"><h2 class="sheet-title text-xl font-bold text-slate-900 flex items-center justify-between">Export / Import<button class="btn" data-variant="ghost" data-size="icon" onclick="closeSheet('importSheet')">✕</button></h2></div>
+  <div class="px-6 pb-6 grid gap-2">
+    <button class="btn" data-variant="outline" data-size="lg" style="width:100%" onclick="closeSheet('importSheet');toast('JSON backup downloaded')">⬇️ Export JSON backup</button>
+    <button class="btn" data-variant="outline" data-size="lg" style="width:100%" onclick="closeSheet('importSheet');toast('CSV exported')">⬇️ Export CSV</button>
+    <button class="btn" data-variant="outline" data-size="lg" style="width:100%" onclick="closeSheet('importSheet');toast('Importing Splitwise CSV (demo)')">⬆️ Import Splitwise CSV</button>
+  </div>
+</dialog>
+
+<div id="toast" class="hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] bg-slate-900 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-lg fade-in max-w-[90vw] text-center"></div>
+
+<script>
+function showTab(name){
+  document.querySelectorAll('.viewblock').forEach(v=>v.classList.add('hidden'));
+  document.getElementById('view-'+name).classList.remove('hidden');
+  document.querySelectorAll('.tabbtn').forEach(b=>{const on=b.dataset.tab===name;b.classList.toggle('text-slate-900',on);b.classList.toggle('text-slate-400',!on);});
+  window.scrollTo({top:0});
+}
+function setFilter(f){
+  document.querySelectorAll('.tab-list .tab-trigger').forEach(b=>{b.setAttribute('aria-selected', b.dataset.f===f);});
+  document.querySelectorAll('.feed-item').forEach(it=>{it.style.display=(f==='all'||it.dataset.type===f)?'':'none';});
+}
+function toggleSplits(btn){const det=btn.closest('.feed-item').querySelector('details');det.open=!det.open;btn.textContent=det.open?'Hide ▴':'Show ▾';}
+function setSplit(btn,kind){
+  const wrap=btn.closest('.grid');wrap.querySelectorAll('.btn').forEach(b=>{b.setAttribute('data-variant','secondary')});
+  btn.setAttribute('data-variant','default');
+}
+function openSheet(id){document.getElementById(id).showModal();}
+function closeSheet(id){document.getElementById(id).close();}
+function markSettled(){closeSheet('settleSheet');toast('Marked as settled ✓');}
+let toastTimer;
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.add('hidden'),2200);}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('dialog.sheet').forEach(d=>d.close());});
+showTab('home');
+</script>
+</body>
+</html>

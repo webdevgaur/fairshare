@@ -3,6 +3,21 @@ export interface Member {
   name: string
 }
 
+/**
+ * A sealed, E2E-encrypted CRDT operation envelope (ADR-E2E-ENCRYPTION §6.1).
+ * Carried as a WebSocket binary frame; the relay sees only `bytes`. The sender's
+ * public keys ride in the envelope so the receiver can locate its wrapped key,
+ * decrypt, and verify authorship against the signed member directory.
+ */
+export interface SealedOpEnvelope {
+  /** Opaque binary frame relayed verbatim to the room. */
+  bytes: Uint8Array
+  /** Sender's Ed25519 public key (hex) — used to verify the signature. */
+  senderPublicKey: string
+  /** Sender's ephemeral X25519 public key (hex) — used for key agreement. */
+  senderX25519PublicKey: string
+}
+
 export interface ExpenseSplit {
   user_id: string
   user_name: string

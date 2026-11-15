@@ -5,7 +5,7 @@
  * The user id is the public key fingerprint (8-char hex string).
  * The name is editable and persisted alongside the keypair.
  */
-import { fingerprint, publicKeyHex, resetIdentity as resetCryptoIdentity } from './crypto'
+import { fingerprint, publicKeyHex, x25519PublicKeyHex, resetIdentity as resetCryptoIdentity } from './crypto'
 
 const STORAGE_KEY = 'fairshare_identity'
 
@@ -39,4 +39,14 @@ export function clearLocalUser() {
 /** Returns the raw public key hex (for display / peer exchange). */
 export function getPublicKeyHex(): string {
   return publicKeyHex()
+}
+
+/** Returns the local X25519 encryption public key as hex (for E2E recipients). */
+export function getX25519PublicKeyHex(): string {
+  return x25519PublicKeyHex()
+}
+
+/** Both public keys for the local identity, as hex. */
+export function getIdentityKeys(): { publicKey: string; x25519PublicKey: string } {
+  return { publicKey: publicKeyHex(), x25519PublicKey: x25519PublicKeyHex() }
 }

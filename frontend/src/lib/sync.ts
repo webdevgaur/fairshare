@@ -18,6 +18,7 @@
 import { store } from './store'
 import type { PaymentHandles } from './engine'
 import { notifyActivity } from './notifications'
+import { sealOp, openSealedEnvelope } from './crypto'
 
 // ─── Types ─────────────────────────────────────���────────────────────────────
 
@@ -89,6 +90,21 @@ function getPersistedPeerId(): string {
     localStorage.setItem(STORAGE_KEY_PEER, id)
   }
   return id
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16)
+  }
+  return bytes
+}
+
+/** Copy bytes into a fresh ArrayBuffer-backed view (WebSocket.send wants BufferSource). */
+function toBuffer(bytes: Uint8Array) {
+  const out = new Uint8Array(bytes.length)
+  out.set(bytes)
+  return out
 }
 
 // ─── Lamport Clock ──────────────────────────────────────────────────────────
@@ -403,6 +419,9 @@ class SyncClient {
       return
     }
 
+    // E2E sealed ops arrive as WebSocket binary frames; read them as raw bytes.
+    this.ws.binaryType = 'arraybuffer'
+
     this.ws.onopen = () => {
       this.connected = true
       this.reconnectAttempt = 0
@@ -458,7 +477,13 @@ class SyncClient {
 
   // ── Message Handling ────────────────────────────────────────────────────
 
-  private async handleMessage(raw: string): Promise<void> {
+  private async handleMessage(raw: string | ArrayBuffer): Promise<void> {
+    // E2E sealed ops arrive as binary frames (ADR Decision 3A).
+    if (raw instanceof ArrayBuffer) {
+      await this.handleBinary(new Uint8Array(raw))
+      return
+    }
+
     let msg: RelayMessage
     try {
       msg = JSON.parse(raw)
@@ -510,6 +535,19 @@ class SyncClient {
         console.warn('[sync] Relay error:', msg.message)
         break
     }
+  }
+
+  /**
+   * Handle a received E2E sealed envelope (WebSocket binary frame). Drops it
+   * silently on failure — fail-closed matches the legacy decryptPatch behavior
+   * and keeps a device on the plaintext path until it can unseal (ADR §9).
+   */
+  private async handleBinary(bytes: Uint8Array): Promise<void> {
+    const opened = await openSealedEnvelope(bytes)
+    if (!opened) return // not a recipient, or tampered / wrong key
+
+    const op = opened.op as unknown as CRDTOperation
+    await this.applyRemoteOp(op)
   }
 
   // ── Applying Remote Operations ──────────────────────────────────────────
@@ -667,6 +705,17 @@ class SyncClient {
   private async sendOp(op: CRDTOperation): Promise<void> {
     if (!this.connected || !this.ws) return
 
+    const gid = this.groupIdForOp(op)
+    const memberKeys = store.getGroupMemberX25519PublicKeys(gid)
+    if (store.isGroupE2EReady(gid) && memberKeys.length > 0) {
+      // E2E: seal the op once per group member's X25519 public key (ADR §3).
+      const recipients = memberKeys.map((hex) => ({ x25519PublicKey: hexToBytes(hex) }))
+      const bytes = await sealOp(op as unknown as Record<string, unknown>, recipients)
+      this.sendBinary(bytes)
+      return
+    }
+
+    // Legacy demo path (backward compat for non-E2E groups).
     const { encrypted, iv } = await encryptPatch(op, this.groupKey)
     const patch: EncryptedPatch = {
       type: 'patch',
@@ -675,6 +724,26 @@ class SyncClient {
       peer_id: this.peerId,
     }
     this.sendJson(patch as unknown as Record<string, unknown>)
+  }
+
+  /** Resolve the numeric group id for an op, falling back to the current room. */
+  private groupIdForOp(op: CRDTOperation): number {
+    const gid = op.group_id
+    if (typeof gid === 'number' && Number.isFinite(gid)) return gid
+    const n = Number(gid)
+    if (Number.isFinite(n) && String(gid) !== 'unknown' && String(gid) !== '') return n
+    const cur = this.currentGroupId
+    return cur ? Number(cur) : 0
+  }
+
+  /** Send a raw binary (sealed envelope) frame to the relay. */
+  private sendBinary(bytes: Uint8Array): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+    try {
+      this.ws.send(toBuffer(bytes))
+    } catch {
+      // will retry
+    }
   }
 
   private sendJson(msg: Record<string, unknown>): void {
