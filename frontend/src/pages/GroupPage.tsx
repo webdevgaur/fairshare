@@ -21,6 +21,8 @@ import {
   getPendingInvitesForGroup,
   acceptInvite,
   declineInvite,
+  createDispute,
+  getPendingDisputes,
 } from '../lib/api'
 import type { BalanceEntry, Transaction, PendingInviteRecord, Expense } from '../lib/api'
 import { buildPaymentLink, type PaymentProvider } from '../lib/paymentLinks'
@@ -30,6 +32,7 @@ import ActivityLog from '@/components/activity-log'
 import ReceiptScanner from '@/components/ReceiptScanner'
 import ReceiptReview from '@/components/ReceiptReview'
 import ConfirmDialog from '@/components/confirm-dialog'
+import DisputePanel from '@/components/dispute-panel'
 import { parseReceipt, type ParsedReceipt, type ParsedLineItem } from '../lib/receipt-parser'
 import { putReceipt } from '../lib/receipt-store'
 import type { OcrResult } from '../lib/receipt-parser'
@@ -132,6 +135,13 @@ export default function GroupPage() {
   const [scanImage, setScanImage] = useState<Blob | null>(null)
   const [scanParsed, setScanParsed] = useState<ParsedReceipt | null>(null)
   const [activeTab, setActiveTab] = useState<'expenses' | 'activity'>('expenses')
+
+  // Dispute form (F12)
+  const [showDisputeForm, setShowDisputeForm] = useState(false)
+  const [disputeExp, setDisputeExp] = useState<Expense | null>(null)
+  const [disputeTotal, setDisputeTotal] = useState('')
+  const [disputeSplits, setDisputeSplits] = useState<Record<string, string>>({})
+  const [disputeError, setDisputeError] = useState('')
 
   const currentUserId = getCurrentUserId()
 
@@ -341,6 +351,66 @@ export default function GroupPage() {
     setScanParsed(null)
   }
 
+  // ─── F12 Expense Dispute handlers ───
+
+  function handleOpenDispute(expense: Expense) {
+    setDisputeExp(expense)
+    setDisputeTotal('')
+    const prefill: Record<string, string> = {}
+    for (const s of expense.splits) {
+      prefill[s.user_id] = String(s.amount)
+    }
+    setDisputeSplits(prefill)
+    setDisputeError('')
+    setShowDisputeForm(true)
+  }
+
+  function handleSubmitDispute() {
+    if (!disputeExp) return
+
+    const proposedTotal = disputeTotal.trim() ? parseFloat(disputeTotal) : undefined
+    const fillable = members.map((m) => ({ id: m.id, raw: disputeSplits[m.id] ?? '' }))
+    const filled = fillable.filter((s) => s.raw.trim() !== '')
+    const proposedSplits = filled.length > 0
+      ? filled.map((s) => {
+          const member = members.find((m) => m.id === s.id)
+          return { user_id: s.id, user_name: member?.name ?? 'Unknown', amount: parseFloat(s.raw) }
+        })
+      : undefined
+
+    if (proposedTotal === undefined && proposedSplits === undefined) {
+      setDisputeError('Provide an alternative total or at least one split amount.')
+      return
+    }
+
+    if (proposedTotal !== undefined && (isNaN(proposedTotal) || proposedTotal <= 0)) {
+      setDisputeError('Total must be a positive number.')
+      return
+    }
+    if (proposedSplits !== undefined) {
+      for (const s of proposedSplits) {
+        if (isNaN(s.amount) || s.amount < 0) {
+          setDisputeError('Invalid amount in split.')
+          return
+        }
+      }
+    }
+
+    try {
+      createDispute(groupId, disputeExp.uuid, proposedTotal, proposedSplits)
+    } catch (e) {
+      setDisputeError((e as Error).message)
+      return
+    }
+
+    setShowDisputeForm(false)
+    setDisputeExp(null)
+    setDisputeTotal('')
+    setDisputeSplits({})
+    setDisputeError('')
+    setExpenses(getExpenses(groupId))
+  }
+
   if (loading) {
     return (
       <div className="space-y-4 animate-shimmer">
@@ -366,6 +436,13 @@ export default function GroupPage() {
         memo: 'FairShare settlement',
       })
     : null
+
+  const pendingDisputes = getPendingDisputes(groupId)
+  const disputedExpenseUuids = new Set(pendingDisputes.map((d) => d.expense_uuid))
+
+  function handleDisputeResolved() {
+    setExpenses(getExpenses(groupId))
+  }
 
   return (
     <div className="animate-fade-in">
@@ -801,7 +878,9 @@ export default function GroupPage() {
           <h2 className="text-xs uppercase tracking-wider font-medium text-slate-400 mb-2">
             Expenses
           </h2>
-          {expenses.map((exp) => (
+          {expenses.map((exp) => {
+            const isDisputed = disputedExpenseUuids.has(exp.uuid)
+            return (
             <div
               key={exp.uuid}
               className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5"
@@ -809,20 +888,38 @@ export default function GroupPage() {
               <div className="min-w-0 text-sm text-slate-700">
                 <span className="font-medium">{exp.description}</span>
                 <span className="text-slate-400"> — {formatCurrency(exp.amount)}</span>
-                <div className="text-xs text-slate-400">
-                  paid by {exp.paid_by_name} · {exp.date}
+                <div className="flex flex-wrap gap-x-2 items-center">
+                  <span className="text-xs text-slate-400">
+                    paid by {exp.paid_by_name} · {exp.date}
+                  </span>
+                  {isDisputed && (
+                    <span className="text-xs text-amber-500 font-medium">⚖️ Under dispute</span>
+                  )}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setDeletingExpense(exp.uuid)}
-                className="inline-flex items-center justify-center w-11 h-11 rounded-lg text-rose-400 hover:text-rose-600 hover:bg-rose-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2"
-                aria-label={`Delete ${exp.description}`}
-              >
-                🗑
-              </button>
+              <div className="flex gap-1.5 shrink-0">
+                {!isDisputed && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenDispute(exp)}
+                    className="inline-flex items-center justify-center w-11 h-11 rounded-lg text-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2"
+                    aria-label={`Dispute ${exp.description}`}
+                  >
+                    ⚖️
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDeletingExpense(exp.uuid)}
+                  className="inline-flex items-center justify-center w-11 h-11 rounded-lg text-rose-400 hover:text-rose-600 hover:bg-rose-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2"
+                  aria-label={`Delete ${exp.description}`}
+                >
+                  🗑
+                </button>
+              </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -844,6 +941,96 @@ export default function GroupPage() {
         }}
         onCancel={() => setDeletingExpense(null)}
       />
+
+      {/* Disputes section (F12) */}
+      {pendingDisputes.length > 0 && (
+        <DisputePanel
+          groupId={groupId}
+          expenses={expenses}
+          onDisputeResolved={handleDisputeResolved}
+        />
+      )}
+
+      {/* Dispute form modal (F12) */}
+      {showDisputeForm && disputeExp && (
+        <div
+          data-testid="dispute-form"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 animate-fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowDisputeForm(false)
+          }}
+        >
+          <div className="w-full sm:max-w-sm mx-0 sm:mx-4 rounded-t-xl sm:rounded-xl bg-white shadow-lg p-5 animate-slide-up max-h-[90vh] overflow-y-auto">
+            <h3 className="text-base font-semibold text-slate-900">Dispute Expense</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Propose a corrected total or split for this expense.
+            </p>
+
+            <div className="mt-3 text-xs text-slate-500 bg-slate-50 rounded-lg p-2.5">
+              <span className="font-medium text-slate-600">Original:</span>{' '}
+              {disputeExp.description} — {formatCurrency(disputeExp.amount)}
+              <div className="text-slate-400">paid by {disputeExp.paid_by_name} · {disputeExp.date}</div>
+            </div>
+
+            {/* Proposed total */}
+            <div className="mt-4">
+              <label className="text-xs font-medium text-slate-500 block mb-1">
+                Alternative total <span className="text-slate-300">(optional)</span>
+              </label>
+              <Input
+                value={disputeTotal}
+                onChange={(e) => setDisputeTotal(e.target.value)}
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="Leave blank to keep current total"
+              />
+            </div>
+
+            {/* Proposed splits per member */}
+            <div className="mt-4">
+              <p className="text-xs font-medium text-slate-500 mb-1">
+                Alternative split per member <span className="text-slate-300">(optional)</span>
+              </p>
+              {members.map((m) => (
+                <div key={m.id} className="flex items-center gap-2 mt-1.5">
+                  <span className="text-sm text-slate-700 w-24 truncate shrink-0">{m.name}</span>
+                  <Input
+                    value={disputeSplits[m.id] ?? ''}
+                    onChange={(e) =>
+                      setDisputeSplits((prev) => ({ ...prev, [m.id]: e.target.value }))
+                    }
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                  />
+                </div>
+              ))}
+            </div>
+
+            {disputeError && (
+              <p className="mt-3 text-xs text-rose-500">{disputeError}</p>
+            )}
+
+            <div className="mt-5 flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowDisputeForm(false)
+                  setDisputeError('')
+                }}
+              >
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleSubmitDispute}>
+                Submit Dispute
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
 
       {activeTab === 'activity' && (

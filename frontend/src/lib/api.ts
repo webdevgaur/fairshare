@@ -1,5 +1,5 @@
 import { store, type StoreState, type CoupleRecord, type PendingInviteRecord } from './store'
-import { calculateBalances, simplifyDebts, netCoupleBalances, computeAnalytics, CATEGORIES, type BalanceEntry, type Expense, type Settlement, type Transaction, type PaymentHandles, type Comment, type ActivityItem, type ActivityLogEntry, type AnalyticsSummary, type CategorySpend, type MonthlySpend, type CoupleNettingConfig } from './engine'
+import { calculateBalances, simplifyDebts, netCoupleBalances, computeAnalytics, CATEGORIES, type BalanceEntry, type Expense, type Settlement, type Transaction, type PaymentHandles, type Comment, type ActivityItem, type ActivityLogEntry, type AnalyticsSummary, type CategorySpend, type MonthlySpend, type CoupleNettingConfig, type Dispute, type ExpenseSplit } from './engine'
 import { getLocalUser } from './identity'
 import { syncClient } from './sync'
 import { buildActivityFeed } from './feed'
@@ -8,7 +8,7 @@ import type { ParsedLineItem } from './receipt-parser'
 
 /* ─── Re-export types ─── */
 
-export type { BalanceEntry, Expense, Settlement, Transaction, PaymentHandles, Comment, ActivityItem, ActivityLogEntry, AnalyticsSummary, CategorySpend, MonthlySpend, PendingInviteRecord }
+export type { BalanceEntry, Expense, Settlement, Transaction, PaymentHandles, Comment, ActivityItem, ActivityLogEntry, AnalyticsSummary, CategorySpend, MonthlySpend, PendingInviteRecord, Dispute }
 export { CATEGORIES } from './engine'
 export type { Member } from './engine'
 
@@ -733,4 +733,152 @@ export function declineInvite(inviteUuid: string): void {
 /** Look up an invite by its unique token. */
 export function getInviteByToken(token: string): PendingInviteRecord | undefined {
   return store.getInviteByToken(token)
+}
+
+/* ─── Expense Disputes (F12) ─── */
+
+/**
+ * Create a new dispute on an expense, proposing a corrected total and/or splits.
+ * Throws if the proposal is invalid or a pending dispute already exists.
+ */
+export function createDispute(
+  groupId: number,
+  expenseUuid: string,
+  proposedTotal?: number | null,
+  proposedSplits?: ExpenseSplit[] | null,
+): Dispute {
+  const user = getLocalUser()
+  if (!user) throw new Error('No local user')
+
+  const members = store.getGroupMembers(groupId)
+  const dispute = store.createDispute(
+    groupId,
+    expenseUuid,
+    user.id,
+    user.name,
+    proposedTotal,
+    proposedSplits,
+  )
+
+  syncClient.enqueue('create_dispute', {
+    group_id: groupId,
+    expense_uuid: expenseUuid,
+    proposer_id: user.id,
+    proposer_name: user.name,
+    proposed_total: proposedTotal,
+    proposed_splits: proposedSplits,
+    acceptance_set: members.map((m) => m.id),
+    uuid: dispute.uuid,
+    created_at: dispute.created_at,
+  })
+
+  return dispute
+}
+
+/**
+ * Accept a pending dispute as the current user.
+ * If this is the last required acceptance, the dispute is resolved as accepted
+ * and the expense is updated to the proposed values.
+ * Returns null if the user has already voted.
+ */
+export function acceptDispute(disputeUuid: string): Dispute | null {
+  const user = getLocalUser()
+  if (!user) throw new Error('No local user')
+
+  const result = store.acceptDispute(disputeUuid, user.id)
+  if (!result) return null
+
+  if (result.status === 'accepted') {
+    // This vote triggered resolution — update the expense and log
+    store.applyResolve(disputeUuid, 'accepted', result.resolved_at ?? undefined)
+
+    const activityEntry = store.logActivity({
+      group_id: result.group_id,
+      type: 'dispute_resolved',
+      actor_id: user.id,
+      actor_name: user.name,
+      entity_uuid: result.expense_uuid,
+      payload: { outcome: 'accepted', dispute_uuid: disputeUuid },
+    })
+
+    syncClient.enqueue('resolve_dispute', {
+      dispute_uuid: disputeUuid,
+      outcome: 'accepted',
+      resolved_at: result.resolved_at ?? undefined,
+    })
+
+    syncClient.enqueue('create_activity', {
+      group_id: activityEntry.group_id,
+      uuid: activityEntry.uuid,
+      type: activityEntry.type,
+      actor_id: activityEntry.actor_id,
+      actor_name: activityEntry.actor_name,
+      entity_uuid: activityEntry.entity_uuid,
+      payload: activityEntry.payload,
+      created_at: activityEntry.created_at,
+    })
+  } else {
+    syncClient.enqueue('accept_dispute', {
+      dispute_uuid: disputeUuid,
+      member_id: user.id,
+    })
+  }
+
+  return result
+}
+
+/**
+ * Reject a pending dispute as the current user.
+ * Any rejection immediately resolves the dispute as rejected (original expense unchanged).
+ * Returns null if the user has already voted.
+ */
+export function rejectDispute(disputeUuid: string): Dispute | null {
+  const user = getLocalUser()
+  if (!user) throw new Error('No local user')
+
+  const result = store.rejectDispute(disputeUuid, user.id)
+  if (!result) return null
+
+  if (result.status === 'rejected') {
+    // Rejection resolved the dispute — log and sync resolution
+    const activityEntry = store.logActivity({
+      group_id: result.group_id,
+      type: 'dispute_resolved',
+      actor_id: user.id,
+      actor_name: user.name,
+      entity_uuid: result.expense_uuid,
+      payload: { outcome: 'rejected', dispute_uuid: disputeUuid },
+    })
+
+    syncClient.enqueue('resolve_dispute', {
+      dispute_uuid: disputeUuid,
+      outcome: 'rejected',
+      resolved_at: result.resolved_at ?? undefined,
+    })
+
+    syncClient.enqueue('create_activity', {
+      group_id: activityEntry.group_id,
+      uuid: activityEntry.uuid,
+      type: activityEntry.type,
+      actor_id: activityEntry.actor_id,
+      actor_name: activityEntry.actor_name,
+      entity_uuid: activityEntry.entity_uuid,
+      payload: activityEntry.payload,
+      created_at: activityEntry.created_at,
+    })
+  } else {
+    syncClient.enqueue('reject_dispute', {
+      dispute_uuid: disputeUuid,
+      member_id: user.id,
+    })
+  }
+
+  return result
+}
+
+/**
+ * Return all pending (unresolved) disputes for a group.
+ */
+export function getPendingDisputes(groupId: number): Dispute[] {
+  return store.getPendingDisputes(groupId)
 }

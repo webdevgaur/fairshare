@@ -124,4 +124,68 @@ test.describe('Expenses', () => {
     await expect(page.getByText('Sushi')).toBeVisible()
     await expect(page.getByText('$45.00').first()).toBeVisible()
   })
+
+  test('expense amount changes after dispute resolved', async ({ page }) => {
+    const userId = await seedIdentity(page, 'Alice')
+    const groupId = await seedGroup(page, 'Home', '', ['Bob'])
+    await gotoApp(page, '/')
+
+    // Create an expense
+    const expense = await page.evaluate(async ({ groupId }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.createExpense({
+        group_id: groupId,
+        amount: 100,
+        description: 'Dinner',
+        splits: [],
+      })
+    }, { groupId })
+
+    // Create dispute proposing $80
+    const dispute = await page.evaluate(async ({ groupId, expense }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.createDispute(groupId, expense.uuid, 80)
+    }, { groupId, expense })
+
+    // Get member IDs and names
+    const members = await page.evaluate(async ({ groupId }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.getGroupMembers(groupId)
+    }, { groupId })
+
+    const memberIds = members.map((m: any) => m.id)
+    const memberNames = members.map((m: any) => m.name)
+
+    // All members accept via API by switching identity
+    for (let i = 0; i < memberIds.length; i++) {
+      await page.evaluate(
+        ({ id, name }: { id: string; name: string }) => {
+          localStorage.setItem('fairshare_identity', JSON.stringify({ id, name }))
+        },
+        { id: memberIds[i], name: memberNames[i] },
+      )
+      await page.evaluate(async ({ disputeUuid }: any) => {
+        const api: any = await import('/src/lib/api.ts')
+        return api.acceptDispute(disputeUuid)
+      }, { disputeUuid: dispute.uuid })
+    }
+
+    // Restore identity
+    await page.evaluate(
+      ({ id, name }: { id: string; name: string }) => {
+        localStorage.setItem('fairshare_identity', JSON.stringify({ id, name }))
+      },
+      { id: userId, name: 'Alice' },
+    )
+
+    // Verify expense amount updated to $80
+    const expenses = await page.evaluate(async ({ groupId }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.getExpenses(groupId)
+    }, { groupId })
+
+    const updated = expenses.find((e: any) => e.uuid === expense.uuid)
+    expect(updated).toBeTruthy()
+    expect(updated.amount).toBe(80)
+  })
 })
