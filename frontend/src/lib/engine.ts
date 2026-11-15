@@ -44,6 +44,8 @@ export interface Expense {
    * into "Other" at read-time (see normalizeCategory), so records stay honest.
    */
   category?: string
+  /** Soft-delete marker (F11): true when the expense has been deleted. Absent/undefined means active. */
+  deleted?: boolean | null
   splits: ExpenseSplit[]
 }
 
@@ -281,6 +283,14 @@ function pairKey(a: string, b: string): string {
 }
 
 /**
+ * Returns true if the expense has not been soft-deleted.
+ * Backward-compatible: absent/undefined `deleted` means active.
+ */
+export function isActive(expense: Expense): boolean {
+  return !expense.deleted
+}
+
+/**
  * Calculate per-member balances for a group based on expenses and settlements.
  *
  * Balance = total paid by user as payer - total owed by user via splits
@@ -298,7 +308,7 @@ export function calculateBalances(
   }
 
   // Expenses: payer gets credited the full amount, each split participant gets debited their share
-  for (const exp of expenses) {
+  for (const exp of expenses.filter(isActive)) {
     if (balances[exp.paid_by] !== undefined) {
       balances[exp.paid_by] += exp.amount
     }

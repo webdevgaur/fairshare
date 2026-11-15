@@ -274,6 +274,28 @@ export function createExpenseFromScan(
   return created
 }
 
+/**
+ * Soft-delete an expense in a group. Marks the expense as deleted, logs a
+ * `expense_deleted` activity entry, and enqueues a `delete_expense` CRDT op
+ * for cross-device sync. Returns the activity entry.
+ */
+export function deleteExpense(groupId: number, expenseUuid: string): ActivityLogEntry {
+  const user = getLocalUser()
+  if (!user) throw new Error('No local user')
+
+  const entry = store.deleteExpense(groupId, expenseUuid, user.id, user.name)
+
+  syncClient.enqueue('delete_expense', {
+    group_id: groupId,
+    expenseUuid,
+    actor_id: user.id,
+    actor_name: user.name,
+    created_at: entry.created_at,
+  })
+
+  return entry
+}
+
 /* ─── Settlements ─── */
 
 export function getSettlements(groupId: number): Settlement[] {
