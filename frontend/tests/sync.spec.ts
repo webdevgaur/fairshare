@@ -230,3 +230,263 @@ test.describe('CRDT Ops - delete_expense', () => {
     expect(expensesAfterSecond.length).toBe(0)
   })
 })
+
+test.describe('CRDT Ops - Expense Disputes (F12)', () => {
+  test('create_dispute op syncs', async ({ page }) => {
+    await clearStorage(page)
+    const userId = await seedIdentity(page, 'Alice')
+    const groupId = await seedGroup(page, 'Home', '', ['Bob'])
+    await gotoApp(page, '/')
+
+    // Create an expense via the real API
+    const expense = await page.evaluate(async ({ groupId, userId }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.createExpense({
+        group_id: groupId,
+        amount: 100,
+        description: 'Synced Dinner',
+        splits: [{ user_id: userId }],
+      })
+    }, { groupId, userId })
+
+    // Build a create_dispute CRDT op
+    const disputeUuid = crypto.randomUUID()
+    const opId = 'dispute-create-op-' + crypto.randomUUID()
+    const opData = {
+      group_id: groupId,
+      expense_uuid: expense.uuid,
+      proposer_id: userId,
+      proposer_name: 'Alice',
+      proposed_total: 80,
+      proposed_splits: null,
+      acceptance_set: [userId],
+      uuid: disputeUuid,
+      created_at: new Date().toISOString(),
+    }
+
+    // Apply via applyToStore (mimicking a sync'd create_dispute from another device)
+    await page.evaluate(async ({ opData, opId }: any) => {
+      const sync: any = await import('/src/lib/sync.ts')
+      const sc = sync.syncClient
+      const op = {
+        op_id: opId,
+        type: 'create_dispute',
+        group_id: String(opData.group_id),
+        lamport_counter: 1,
+        peer_id: 'test-peer',
+        data: opData,
+        created_at: Date.now(),
+      }
+      ;(sc as any).applyToStore(op)
+    }, { opData, opId })
+
+    // Verify dispute exists in the store
+    const pending = await page.evaluate(async ({ groupId }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.getPendingDisputes(groupId)
+    }, { groupId })
+    expect(pending.length).toBeGreaterThanOrEqual(1)
+    const found = pending.find((d: any) => d.uuid === disputeUuid)
+    expect(found).toBeTruthy()
+    expect(found!.status).toBe('pending')
+    expect(found!.expense_uuid).toBe(expense.uuid)
+    expect(found!.proposed_total).toBe(80)
+
+    // Apply same op again — should be idempotent (duplicate dispute not created)
+    await page.evaluate(async ({ opData, opId }: any) => {
+      const sync: any = await import('/src/lib/sync.ts')
+      const sc = sync.syncClient
+      const op = {
+        op_id: opId,
+        type: 'create_dispute',
+        group_id: String(opData.group_id),
+        lamport_counter: 1,
+        peer_id: 'test-peer',
+        data: opData,
+        created_at: Date.now(),
+      }
+      ;(sc as any).applyToStore(op)
+    }, { opData, opId })
+
+    // Verify still only one dispute
+    const pendingAfterSecond = await page.evaluate(async ({ groupId }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.getPendingDisputes(groupId)
+    }, { groupId })
+    const matching = pendingAfterSecond.filter((d: any) => d.uuid === disputeUuid)
+    expect(matching.length).toBe(1)
+  })
+
+  test('accept_dispute op syncs and resolves on last vote', async ({ page }) => {
+    await clearStorage(page)
+    const userId = await seedIdentity(page, 'Alice')
+    const groupId = await seedGroup(page, 'Home', '', ['Bob', 'Charlie'])
+    await gotoApp(page, '/')
+
+    // Create an expense
+    const expense = await page.evaluate(async ({ groupId, userId }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.createExpense({
+        group_id: groupId,
+        amount: 150,
+        description: 'Group Dinner',
+        splits: [{ user_id: userId }],
+      })
+    }, { groupId, userId })
+
+    // Create dispute via API (gives us a dispute with acceptance_set=[Alice, Bob, Charlie])
+    const dispute = await page.evaluate(async ({ groupId, expense }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.createDispute(groupId, expense.uuid, 120)
+    }, { groupId, expense })
+
+    // Get member IDs from the dispute's acceptance_set
+    const memberIds = dispute.acceptance_set as string[]
+    expect(memberIds.length).toBe(3)
+
+    // Simulate accept_dispute ops via store.acceptDispute directly
+    // for the first two members (not yet resolved)
+    for (let i = 0; i < 2; i++) {
+      await page.evaluate(
+        async ({ disputeUuid, memberId }: { disputeUuid: string; memberId: string }) => {
+          const storeMod: any = await import('/src/lib/store.ts')
+          storeMod.store.acceptDispute(disputeUuid, memberId)
+        },
+        { disputeUuid: dispute.uuid, memberId: memberIds[i] },
+      )
+    }
+
+    // After 2 of 3 accept, dispute should still be pending
+    const pendingAfterTwo = await page.evaluate(async ({ disputeUuid }: any) => {
+      const storeMod: any = await import('/src/lib/store.ts')
+      const d = storeMod.store.getDisputeByUuid(disputeUuid)
+      return d ? { status: d.status, acceptances: d.acceptances, acceptance_set: d.acceptance_set, rejections: d.rejections } : null
+    }, { disputeUuid: dispute.uuid })
+    expect(pendingAfterTwo).not.toBeNull()
+    expect(pendingAfterTwo!.status).toBe('pending')
+    expect(pendingAfterTwo!.acceptances.length).toBe(2)
+
+    // Simulate the third accept — should trigger resolution
+    await page.evaluate(
+      async ({ disputeUuid, memberId }: { disputeUuid: string; memberId: string }) => {
+        const storeMod: any = await import('/src/lib/store.ts')
+        storeMod.store.acceptDispute(disputeUuid, memberId)
+      },
+      { disputeUuid: dispute.uuid, memberId: memberIds[2] },
+    )
+
+    // Verify dispute auto-resolved
+    const resolved = await page.evaluate(async ({ disputeUuid }: any) => {
+      const storeMod: any = await import('/src/lib/store.ts')
+      const d = storeMod.store.getDisputeByUuid(disputeUuid)
+      return d ? { status: d.status, resolved_at: d.resolved_at, acceptances: d.acceptances } : null
+    }, { disputeUuid: dispute.uuid })
+    expect(resolved).not.toBeNull()
+    expect(resolved!.status).toBe('accepted')
+    expect(resolved!.resolved_at).toBeTruthy()
+    expect(resolved!.acceptances.length).toBe(3)
+
+    // Accept same member again via store — idempotent
+    await page.evaluate(
+      async ({ disputeUuid, memberId }: { disputeUuid: string; memberId: string }) => {
+        const storeMod: any = await import('/src/lib/store.ts')
+        storeMod.store.acceptDispute(disputeUuid, memberId)
+      },
+      { disputeUuid: dispute.uuid, memberId: memberIds[2] },
+    )
+
+    // Verify no change
+    const afterReapply = await page.evaluate(async ({ disputeUuid }: any) => {
+      const storeMod: any = await import('/src/lib/store.ts')
+      const d = storeMod.store.getDisputeByUuid(disputeUuid)
+      return d ? { status: d.status, acceptances: d.acceptances } : null
+    }, { disputeUuid: dispute.uuid })
+    expect(afterReapply!.status).toBe('accepted')
+    expect(afterReapply!.acceptances.length).toBe(3)
+  })
+
+  test('reject_dispute op syncs and rejects', async ({ page }) => {
+    await clearStorage(page)
+    const userId = await seedIdentity(page, 'Alice')
+    const groupId = await seedGroup(page, 'Home', '', ['Bob'])
+    await gotoApp(page, '/')
+
+    // Create an expense
+    const expense = await page.evaluate(async ({ groupId, userId }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.createExpense({
+        group_id: groupId,
+        amount: 100,
+        description: 'Synced Dinner',
+        splits: [{ user_id: userId }],
+      })
+    }, { groupId, userId })
+
+    // Create dispute via API
+    const dispute = await page.evaluate(async ({ groupId, expense }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.createDispute(groupId, expense.uuid, 80)
+    }, { groupId, expense })
+
+    const otherMemberId = dispute.acceptance_set.find((id: string) => id !== userId)
+
+    // Simulate a reject_dispute op
+    const opId = 'dispute-reject-op-' + crypto.randomUUID()
+    await page.evaluate(async ({ disputeUuid, memberId, opId }: any) => {
+      const sync: any = await import('/src/lib/sync.ts')
+      const sc = sync.syncClient
+      const op = {
+        op_id: opId,
+        type: 'reject_dispute',
+        group_id: '0',
+        lamport_counter: 1,
+        peer_id: 'test-peer',
+        data: {
+          dispute_uuid: disputeUuid,
+          member_id: memberId,
+        },
+        created_at: Date.now(),
+      }
+      ;(sc as any).applyToStore(op)
+    }, { disputeUuid: dispute.uuid, memberId: otherMemberId, opId })
+
+    // Verify dispute is rejected
+    const result = await page.evaluate(async ({ disputeUuid }: any) => {
+      const storeMod: any = await import('/src/lib/store.ts')
+      const d = storeMod.store.getDisputeByUuid(disputeUuid)
+      return d ? { status: d.status, resolved_at: d.resolved_at, rejections: d.rejections } : null
+    }, { disputeUuid: dispute.uuid })
+    expect(result).not.toBeNull()
+    expect(result!.status).toBe('rejected')
+    expect(result!.resolved_at).toBeTruthy()
+    expect(result!.rejections.length).toBe(1)
+
+    // Apply same reject op again — idempotent
+    await page.evaluate(async ({ disputeUuid, memberId, opId }: any) => {
+      const sync: any = await import('/src/lib/sync.ts')
+      const sc = sync.syncClient
+      const op = {
+        op_id: opId,
+        type: 'reject_dispute',
+        group_id: '0',
+        lamport_counter: 1,
+        peer_id: 'test-peer',
+        data: {
+          dispute_uuid: disputeUuid,
+          member_id: memberId,
+        },
+        created_at: Date.now(),
+      }
+      ;(sc as any).applyToStore(op)
+    }, { disputeUuid: dispute.uuid, memberId: otherMemberId, opId })
+
+    // Verify no duplicate rejection
+    const afterReapply = await page.evaluate(async ({ disputeUuid }: any) => {
+      const storeMod: any = await import('/src/lib/store.ts')
+      const d = storeMod.store.getDisputeByUuid(disputeUuid)
+      return d ? { rejections: d.rejections, status: d.status } : null
+    }, { disputeUuid: dispute.uuid })
+    expect(afterReapply!.status).toBe('rejected')
+    expect(afterReapply!.rejections.length).toBe(1)
+  })
+})

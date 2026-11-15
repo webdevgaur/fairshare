@@ -28,7 +28,7 @@ export interface CRDTOperation {
   /** Globally unique operation ID (nanoid-style) */
   op_id: string
   /** Operation type */
-  type: 'create_group' | 'create_expense' | 'create_settlement' | 'create_comment' | 'update_group' | 'update_profile' | 'register_couple' | 'unregister_couple' | 'remove_couple' | 'create_invite' | 'accept_invite' | 'decline_invite' | 'create_activity' | 'delete_expense'
+  type: 'create_group' | 'create_expense' | 'create_settlement' | 'create_comment' | 'update_group' | 'update_profile' | 'register_couple' | 'unregister_couple' | 'remove_couple' | 'create_invite' | 'accept_invite' | 'decline_invite' | 'create_activity' | 'delete_expense' | 'create_dispute' | 'accept_dispute' | 'reject_dispute' | 'resolve_dispute'
   /** Group this operation belongs to */
   group_id: string | number
   /** Lamport clock value at time of creation */
@@ -60,6 +60,9 @@ export type CRDTOperationData =
   | { invite_uuid: string }
   | { group_id: number; uuid: string; type: string; actor_id: string; actor_name: string; entity_uuid?: string | null; payload?: Record<string, unknown> | null; created_at?: string }
   | { group_id: number; expenseUuid: string; actor_id: string; actor_name: string; created_at?: string }
+  | { group_id: number; expense_uuid: string; proposer_id: string; proposer_name: string; proposed_total?: number | null; proposed_splits?: { user_id: string; user_name: string; amount: number }[] | null; acceptance_set: string[]; created_at?: string; uuid?: string }
+  | { dispute_uuid: string; member_id: string; created_at?: string }
+  | { dispute_uuid: string; outcome: 'accepted' | 'rejected'; resolved_at?: string }
 
 interface QueuedOp {
   op: CRDTOperation
@@ -812,6 +815,82 @@ class SyncClient {
         const expense = expenses.find((e) => e.uuid === d.expenseUuid)
         if (!expense || expense.deleted) break
         store.deleteExpense(Number(d.group_id), d.expenseUuid, d.actor_id, d.actor_name)
+        break
+      }
+
+      case 'create_dispute': {
+        const d = op.data as {
+          group_id: number
+          expense_uuid: string
+          proposer_id: string
+          proposer_name: string
+          proposed_total?: number | null
+          proposed_splits?: { user_id: string; user_name: string; amount: number }[] | null
+          acceptance_set: string[]
+          created_at?: string
+          uuid?: string
+        }
+        // Idempotent: skip if the dispute already exists
+        if (store.getDisputeByUuid(d.uuid ?? '')) break
+        store.createDispute(
+          Number(d.group_id),
+          d.expense_uuid,
+          d.proposer_id,
+          d.proposer_name,
+          d.proposed_total,
+          d.proposed_splits,
+          { uuid: d.uuid, acceptance_set: d.acceptance_set, created_at: d.created_at },
+        )
+        break
+      }
+
+      case 'accept_dispute': {
+        const d = op.data as {
+          dispute_uuid: string
+          member_id: string
+          created_at?: string
+        }
+        const acceptResult = store.acceptDispute(d.dispute_uuid, d.member_id)
+        // If this was the last acceptance triggering resolution, enqueue resolve_dispute
+        if (acceptResult && acceptResult.status === 'accepted') {
+          syncClient.enqueue('resolve_dispute', {
+            dispute_uuid: d.dispute_uuid,
+            outcome: 'accepted',
+            resolved_at: acceptResult.resolved_at ?? undefined,
+          })
+        }
+        break
+      }
+
+      case 'reject_dispute': {
+        const d = op.data as {
+          dispute_uuid: string
+          member_id: string
+          created_at?: string
+        }
+        const rejectResult = store.rejectDispute(d.dispute_uuid, d.member_id)
+        // Rejection immediately resolves the dispute
+        if (rejectResult && rejectResult.status === 'rejected') {
+          syncClient.enqueue('resolve_dispute', {
+            dispute_uuid: d.dispute_uuid,
+            outcome: 'rejected',
+            resolved_at: rejectResult.resolved_at ?? undefined,
+          })
+        }
+        break
+      }
+
+      case 'resolve_dispute': {
+        const d = op.data as {
+          dispute_uuid: string
+          outcome: 'accepted' | 'rejected'
+          resolved_at?: string
+        }
+        // Resolve the dispute in the store (idempotent)
+        // Note: Activity logging happens only in api.ts (canonical source site),
+        // where a separate create_activity op is enqueued. Do NOT log here —
+        // it would create duplicate dispute_resolved entries on remote devices.
+        store.applyResolve(d.dispute_uuid, d.outcome, d.resolved_at)
         break
       }
     }

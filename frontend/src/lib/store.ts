@@ -1,5 +1,6 @@
-import type { Expense, ExpenseSplit, Settlement, Member, PaymentHandles, Comment, ActivityLogEntry } from './engine'
+import type { Expense, ExpenseSplit, Settlement, Member, PaymentHandles, Comment, ActivityLogEntry, Dispute } from './engine'
 import { getLocalUser, getIdentityKeys } from './identity'
+import { validateProposal, canResolveAsAccepted } from './engine'
 
 const STORAGE_KEY = 'fairshare_store'
 
@@ -141,6 +142,8 @@ export interface StoreState {
   nextInviteId: number
   activityLog: ActivityLogEntry[]
   nextActivityId: number
+  disputes: Dispute[]
+  nextDisputeId: number
 }
 
 /* ─── Public store class ─── */
@@ -191,6 +194,8 @@ export class LocalStore {
     if (!state.nextInviteId) state.nextInviteId = 1
     if (!Array.isArray(state.activityLog)) state.activityLog = []
     if (!state.nextActivityId) state.nextActivityId = 1
+    if (!Array.isArray(state.disputes)) state.disputes = []
+    if (!state.nextDisputeId) state.nextDisputeId = 1
 
     for (const exp of state.expenses) {
       if (!exp.uuid) exp.uuid = crypto.randomUUID()
@@ -315,6 +320,8 @@ export class LocalStore {
       nextInviteId: 1,
       activityLog: [],
       nextActivityId: 1,
+      disputes: [],
+      nextDisputeId: 1,
     }
   }
 
@@ -533,6 +540,10 @@ export class LocalStore {
    * Returns the activity log entry recording the deletion.
    */
   deleteExpense(groupId: number, expenseUuid: string, actorId: string, actorName: string): ActivityLogEntry {
+    // Block deletion if there is a pending dispute on this expense (F12 AC #10).
+    if (this.hasDisputeOnExpense(expenseUuid)) {
+      throw new Error('Cannot delete an expense with an open dispute.')
+    }
     const expense = this.state.expenses.find((e) => e.uuid === expenseUuid && e.group_id === groupId)
     if (!expense) {
       // Expense not found — likely already deleted or never existed. Log as a
@@ -873,6 +884,158 @@ export class LocalStore {
     return this.state.activityLog.find((e) => e.uuid === uuid)
   }
 
+  /* ─── F12 Expense Disputes ─── */
+
+  /**
+   * Open a new dispute on an expense.
+   *
+   * Validates the proposal against the expense, checks no other pending
+   * dispute exists on the same expense, snapshots the current group members
+   * as the `acceptance_set`, and returns the created Dispute.
+   *
+   * Throws if the proposal is invalid or a pending dispute already exists.
+   */
+  createDispute(
+    groupId: number,
+    expenseUuid: string,
+    proposerId: string,
+    proposerName: string,
+    proposedTotal?: number | null,
+    proposedSplits?: ExpenseSplit[] | null,
+    opts?: { uuid?: string; created_at?: string; acceptance_set?: string[] },
+  ): Dispute {
+    const expense = this.state.expenses.find((e) => e.uuid === expenseUuid)
+    if (!expense) throw new Error('Expense not found.')
+
+    const validation = validateProposal(expense, proposedTotal, proposedSplits)
+    if (!validation.valid) {
+      throw new Error(`Invalid dispute proposal: ${validation.reason}`)
+    }
+
+    if (this.hasDisputeOnExpense(expenseUuid)) {
+      throw new Error('An open dispute already exists for this expense.')
+    }
+
+    const memberIds = opts?.acceptance_set ?? this.state.groupMembers
+      .filter((gm) => gm.group_id === groupId)
+      .map((gm) => gm.user_id)
+
+    const id = this.state.nextDisputeId++
+    const uuid = opts?.uuid ?? crypto.randomUUID()
+    const nowIso = opts?.created_at ?? new Date().toISOString()
+
+    const dispute: Dispute = {
+      id,
+      uuid,
+      group_id: groupId,
+      expense_uuid: expenseUuid,
+      proposer_id: proposerId,
+      proposer_name: proposerName,
+      proposed_total: proposedTotal ?? null,
+      proposed_splits: proposedSplits ?? null,
+      status: 'pending',
+      acceptance_set: memberIds,
+      acceptances: [],
+      rejections: [],
+      created_at: nowIso,
+      resolved_at: null,
+    }
+
+    this.state.disputes.push(dispute)
+    this.save()
+    return { ...dispute }
+  }
+
+  /**
+   * Accept a pending dispute as a member.
+   *
+   * If the member has already voted (accepted or rejected), the call is
+   * idempotent and returns null. When the last required member accepts,
+   * the dispute transitions to `accepted` and `resolved_at` is set.
+   */
+  acceptDispute(disputeUuid: string, memberId: string): Dispute | null {
+    const dispute = this.state.disputes.find((d) => d.uuid === disputeUuid && d.status === 'pending')
+    if (!dispute) return null
+
+    // Idempotent: already voted
+    if (dispute.acceptances.includes(memberId) || dispute.rejections.includes(memberId)) return null
+
+    dispute.acceptances.push(memberId)
+
+    if (canResolveAsAccepted(dispute)) {
+      dispute.status = 'accepted'
+      dispute.resolved_at = new Date().toISOString()
+    }
+
+    this.save()
+    return { ...dispute }
+  }
+
+  /**
+   * Reject a pending dispute as a member.
+   *
+   * If the member has already voted, the call is idempotent and returns null.
+   * Any rejection immediately resolves the dispute as `rejected`.
+   */
+  rejectDispute(disputeUuid: string, memberId: string): Dispute | null {
+    const dispute = this.state.disputes.find((d) => d.uuid === disputeUuid && d.status === 'pending')
+    if (!dispute) return null
+
+    // Idempotent: already voted
+    if (dispute.acceptances.includes(memberId) || dispute.rejections.includes(memberId)) return null
+
+    dispute.rejections.push(memberId)
+    dispute.status = 'rejected'
+    dispute.resolved_at = new Date().toISOString()
+
+    this.save()
+    return { ...dispute }
+  }
+
+  /** Return all pending disputes for a group. */
+  getPendingDisputes(groupId: number): Dispute[] {
+    return this.state.disputes.filter((d) => d.group_id === groupId && d.status === 'pending')
+  }
+
+  /** Whether there is any pending dispute on the given expense. */
+  hasDisputeOnExpense(expenseUuid: string): boolean {
+    return this.state.disputes.some((d) => d.expense_uuid === expenseUuid && d.status === 'pending')
+  }
+
+  /** Look up a dispute by its stable uuid. */
+  getDisputeByUuid(uuid: string): Dispute | undefined {
+    return this.state.disputes.find((d) => d.uuid === uuid)
+  }
+
+  /** Return the active (pending) dispute for an expense, if any. */
+  getActiveDisputeForExpense(expenseUuid: string): Dispute | undefined {
+    return this.state.disputes.find((d) => d.expense_uuid === expenseUuid && d.status === 'pending')
+  }
+
+  /**
+   * Apply a dispute resolution (accepted or rejected) for cross-device sync.
+   * Idempotent: if the dispute is already in a final state, only the expense
+   * update (for accepted) is re-applied; status is not overwritten.
+   */
+  applyResolve(disputeUuid: string, outcome: 'accepted' | 'rejected', resolvedAt?: string): void {
+    const dispute = this.state.disputes.find((d) => d.uuid === disputeUuid)
+    if (!dispute) return
+
+    if (dispute.status === 'pending') {
+      dispute.status = outcome
+      dispute.resolved_at = resolvedAt ?? new Date().toISOString()
+    }
+
+    if (outcome === 'accepted' && dispute.proposed_total !== undefined && dispute.proposed_total !== null) {
+      const expense = this.state.expenses.find((e) => e.uuid === dispute.expense_uuid)
+      if (expense) {
+        expense.amount = dispute.proposed_total
+      }
+    }
+
+    this.save()
+  }
+
   /* ─── Raw data export for sync ─── */
 
   getAllData(): StoreState {
@@ -914,6 +1077,7 @@ export class LocalStore {
     for (const c of state.couples ?? []) if (!c.uuid) c.uuid = crypto.randomUUID()
     for (const p of state.pendingInvites ?? []) if (!p.uuid) p.uuid = crypto.randomUUID()
     for (const a of state.activityLog ?? []) if (!a.uuid) a.uuid = crypto.randomUUID()
+    for (const d of state.disputes ?? []) if (!d.uuid) d.uuid = crypto.randomUUID()
   }
 
   /**
@@ -933,6 +1097,7 @@ export class LocalStore {
     next.couples = Array.isArray(next.couples) ? next.couples : []
     next.pendingInvites = Array.isArray(next.pendingInvites) ? next.pendingInvites : []
     next.activityLog = Array.isArray(next.activityLog) ? next.activityLog : []
+    next.disputes = Array.isArray(next.disputes) ? next.disputes : []
     this.ensureUuids(next)
     this.fixCommentExpenseIds(next)
     return this.recomputeCounters(next)
@@ -957,6 +1122,7 @@ export class LocalStore {
     state.nextCoupleId = maxId(state.couples ?? []) + 1
     state.nextInviteId = maxId(state.pendingInvites ?? []) + 1
     state.nextActivityId = maxId(state.activityLog ?? []) + 1
+    state.nextDisputeId = maxId(state.disputes ?? []) + 1
     return state
   }
 
@@ -978,6 +1144,7 @@ export class LocalStore {
     const nextCouples: CoupleRecord[] = [...(cur.couples ?? [])]
     const nextPendingInvites: PendingInviteRecord[] = [...(cur.pendingInvites ?? [])]
     const nextActivityLog: ActivityLogEntry[] = [...(cur.activityLog ?? [])]
+    const nextDisputes: Dispute[] = [...(cur.disputes ?? [])]
 
     // Maps from the *imported* numeric id to the imported uuid (join keys)
     const importedGroupIdToUuid = new Map<number, string>()
@@ -1168,6 +1335,23 @@ export class LocalStore {
       nextActivityLog.push({ ...entry, id: nextIdFrom(nextActivityLog) })
     }
 
+    // Disputes: merge by uuid, prefer non-pending status over pending for the same
+    // dispute (a resolved dispute wins over a pending one). Otherwise keep existing.
+    for (const id of imported.disputes ?? []) {
+      const existing = nextDisputes.find((d) => d.uuid === id.uuid)
+      if (existing) {
+        if (id.status !== 'pending') {
+          existing.status = id.status
+          existing.acceptances = [...id.acceptances]
+          existing.rejections = [...id.rejections]
+          existing.resolved_at = id.resolved_at ?? null
+        }
+        // If both are pending (or existing is non-pending), keep existing
+      } else {
+        nextDisputes.push({ ...id, id: nextIdFrom(nextDisputes) })
+      }
+    }
+
     return this.recomputeCounters({
       users: nextUsers,
       groups: nextGroups,
@@ -1187,6 +1371,8 @@ export class LocalStore {
       nextInviteId: 1,
       activityLog: nextActivityLog,
       nextActivityId: 1,
+      disputes: nextDisputes,
+      nextDisputeId: 1,
     })
   }
 }

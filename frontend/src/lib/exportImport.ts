@@ -399,6 +399,8 @@ function emptyImportState(): StoreState {
     nextInviteId: 1,
     activityLog: [],
     nextActivityId: 1,
+    disputes: [],
+    nextDisputeId: 1,
   }
 }
 

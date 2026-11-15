@@ -1,4 +1,4 @@
-import type { CoupleRecord } from './store'
+import type { CoupleRecord, ExpenseRecord } from './store'
 
 export interface Member {
   id: string
@@ -75,6 +75,25 @@ export interface Comment {
   author_name: string
   text: string
   created_at: string
+}
+
+export type DisputeStatus = 'pending' | 'accepted' | 'rejected'
+
+export interface Dispute {
+  id: number
+  uuid: string
+  group_id: number
+  expense_uuid: string
+  proposer_id: string
+  proposer_name: string
+  proposed_total?: number | null
+  proposed_splits?: ExpenseSplit[] | null
+  status: DisputeStatus
+  acceptance_set: string[]
+  acceptances: string[]
+  rejections: string[]
+  created_at: string
+  resolved_at?: string | null
 }
 
 export interface PendingInvite {
@@ -493,4 +512,87 @@ export function computeAnalytics(expenses: Expense[]): AnalyticsSummary {
     byCategory,
     monthlySpend,
   }
+}
+
+/* ─── F12 Expense Dispute helpers ─── */
+
+/**
+ * Returns true when all required members have accepted and no one has rejected.
+ */
+export function canResolveAsAccepted(dispute: Dispute): boolean {
+  return dispute.acceptances.length === dispute.acceptance_set.length && dispute.rejections.length === 0
+}
+
+/**
+ * Returns true when at least one member has rejected the dispute.
+ */
+export function hasAnyRejection(dispute: Dispute): boolean {
+  return dispute.rejections.length > 0
+}
+
+/**
+ * Validate a dispute proposal against the expense.
+ *
+ * Rules:
+ * - If both proposedTotal and proposedSplits are provided, the sum of splits
+ *   must equal proposedTotal (within 0.005 rounding tolerance).
+ * - If only proposedSplits is provided, the sum must equal the expense's current
+ *   amount (no new total was specified, so the existing total is shared differently).
+ * - Individual split amounts must be non-negative.
+ * - Currency validation is skipped (no currency field on ExpenseRecord yet).
+ */
+export function validateProposal(
+  expense: ExpenseRecord,
+  proposedTotal?: number | null,
+  proposedSplits?: ExpenseSplit[] | null,
+): { valid: boolean; reason?: string } {
+  if ((proposedTotal === undefined || proposedTotal === null) && (proposedSplits === undefined || proposedSplits === null)) {
+    return { valid: false, reason: 'No proposal provided — at least one of total or splits must be supplied.' }
+  }
+
+  if (proposedTotal !== undefined && proposedTotal !== null && proposedSplits !== undefined && proposedSplits !== null) {
+    const splitSum = proposedSplits.reduce((sum, s) => sum + s.amount, 0)
+    if (Math.abs(splitSum - proposedTotal) > 0.005) {
+      return {
+        valid: false,
+        reason: `Proposed total (${proposedTotal}) does not match the sum of proposed splits (${Math.round(splitSum * 100) / 100}).`,
+      }
+    }
+  }
+
+  if ((proposedTotal === undefined || proposedTotal === null) && proposedSplits !== undefined && proposedSplits !== null) {
+    const splitSum = proposedSplits.reduce((sum, s) => sum + s.amount, 0)
+    if (Math.abs(splitSum - expense.amount) > 0.005) {
+      return { valid: false, reason: 'Sum of proposed splits does not match the expense amount.' }
+    }
+  }
+
+  if (proposedSplits !== undefined && proposedSplits !== null) {
+    for (const s of proposedSplits) {
+      if (s.amount < 0) {
+        return { valid: false, reason: `Split for ${s.user_name || s.user_id} has a negative amount (${s.amount}).` }
+      }
+    }
+  }
+
+  return { valid: true }
+}
+
+/**
+ * Produce a new ExpenseRecord with the dispute's proposed total applied.
+ * Performs a deep copy — the original is never mutated.
+ *
+ * Note: ExpenseRecord does not carry a `splits` field; the caller updates
+ * ExpenseSplitRecord entries separately when a dispute is accepted.
+ */
+export function applyDisputeToExpense(
+  expense: ExpenseRecord,
+  proposedTotal?: number | null,
+  _proposedSplits?: ExpenseSplit[] | null,
+): ExpenseRecord {
+  const copy: ExpenseRecord = JSON.parse(JSON.stringify(expense))
+  if (proposedTotal !== undefined && proposedTotal !== null) {
+    copy.amount = proposedTotal
+  }
+  return copy
 }
