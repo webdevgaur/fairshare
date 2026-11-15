@@ -27,9 +27,10 @@ Built with [agency-agents](https://github.com/msitarzewski/agency-agents) specia
 ||| **F9** — Couple Mode | ✅ Done (v0.5.0) | Mutual couple registration (Profile.tsx); per-group toggle (GroupPage.tsx); netted settlement suggestions (intra-couple debt combined); expenses still split by all N members. |
 ||| **F8** — Group Member Invite | ✅ Done (v0.6.0) | Identity QR on Profile, QR scanner for scanning friend's code; share-link invite with deep-link handler (`?invite=<token>`); Pending → Accept/Decline workflow; 3 new CRDT ops. |
 ||| **F10** — Activity Log | ✅ Done (v0.7.0) | Append-only chronological audit trail — logs every expense add, settlement, and comment (F11/F12 support ready). Backfill creates log entries for pre-existing data. New `activity-log.tsx` component + Activity tab on GroupPage. Schema v3 (exportImport). |
-||| **F11** — Delete Expense | ✅ Done (v0.8.0) | Soft-delete by any group member; confirmation dialog; balances/settlements recompute immediately; CRDT `delete_expense` op for cross-device sync; Activity Log records `expense_deleted` entry. New reusable `confirm-dialog.tsx`. |
+|||| **F11** — Delete Expense | ✅ Done (v0.8.0) | Soft-delete by any group member; confirmation dialog; balances/settlements recompute immediately; CRDT `delete_expense` op for cross-device sync; Activity Log records `expense_deleted` entry. New reusable `confirm-dialog.tsx`. |
+|||| **F12** — Expense Dispute | ✅ Done (v0.9.0) | Consensus-based dispute resolution — propose alternative total/split on any expense; all group members must accept to resolve, any single rejection rejects; accepted disputes update the expense and balances; Activity Log records `dispute_resolved` entries; delete blocked while dispute pending. 4 new CRDT ops (`create_dispute`/`accept_dispute`/`reject_dispute`/`resolve_dispute`). New `dispute-panel.tsx` component. 14 new tests. |
 
-**Roadmap:** the PRD ([`../PRD_FairShare.md`](../PRD_FairShare.md)) defines core features (F1–F11). **F2** (Recurring Expenses) and **F7** (Multi-Currency Travel Mode) remain unbuilt.
+**Roadmap:** the PRD ([`../PRD_FairShare.md`](../PRD_FairShare.md)) defines core features (F1–F12). All F1–F12 features are now shipped. **F2** (Recurring Expenses) and **F7** (Multi-Currency Travel Mode) remain unbuilt.
 
 ---
 
@@ -142,7 +143,7 @@ On first visit you'll be prompted for a name; this seeds the local identity. The
 ```bash
 cd frontend
 npm run dev &                   # keep the dev server running
-npx playwright test             # 117 E2E tests across 17 spec files
+npx playwright test             # 131 E2E tests across 18 spec files
 ```
 
 ---

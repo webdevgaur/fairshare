@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FairShare — App</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/theme/default-semantic-tokens.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/button/button.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/card/card.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/tabs/tabs.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/avatar/avatar.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/sheet/sheet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/input/input.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/label/label.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codylindley/shadcn-html@latest/dist/components/badge/badge.css">
+<style>
+  :root{--green:#16a34a;--rose:#e11d48;--amber:#f59e0b}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased;background:#eef2f6;min-height:100vh}
+  .fade-in{animation:fade .22s ease}@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+  .soft{box-shadow:0 8px 24px -6px rgba(15,23,42,.10)}
+  details>summary{list-style:none}details>summary::-webkit-details-marker{display:none}
+  .sheet[data-side="bottom"]{width:100%;max-width:100vh;border-radius:1.25rem 1.25rem 0 0}.sheet::backdrop{background:oklch(0 0 0/.45);backdrop-filter:blur(3px)}
+  .btn:active{transform:scale(.97)}.btn{transition:transform .12s ease,opacity .12s ease}
+  ::-webkit-scrollbar{display:none}
+</style>
+</head>
+<body>
+<div class="max-w-md mx-auto relative">
+
+  <header class="sticky top-0 z-30 bg-[#eef2f6]/90 backdrop-blur px-5 pt-5 pb-3">
+    <div class="flex items-center justify-between">
+      <div><p class="text-[11px] font-medium text-slate-400">Hello,</p><h1 class="text-2xl font-bold tracking-tight text-slate-900">Anurag 👋</h1></div>
+      <span class="avatar" data-size="lg"><span class="avatar-fallback" style="background:linear-gradient(135deg,#6366f1,#7c3aed);color:#fff;font-weight:700">A</span></span>
+    </div>
+  </header>
+
+  <!-- HOME -->
+  <div id="view-home" class="viewblock px-5 pb-28 space-y-4">
+    <div class="grid grid-cols-2 gap-3 mt-1">
+      <div class="card" style="background:#ecfdf5;border-color:#a7f3d0"><div class="card-content"><p class="text-[11px] font-semibold text-emerald-700 tracking-wide">You're owed</p><p class="text-3xl font-bold text-emerald-700 mt-1">$54.75</p><p class="text-[11px] text-emerald-600/80 mt-2">across 2 groups</p></div></div>
+      <div class="card" style="background:#fff1f2;border-color:#fecdd3"><div class="card-content"><p class="text-[11px] font-semibold text-rose-700 tracking-wide">You owe</p><p class="text-3xl font-bold text-rose-700 mt-1">$180.00</p><p class="text-[11px] text-rose-600/80 mt-2">across 1 group</p></div></div>
+    </div>
+    <div class="flex gap-2">
+      <button class="btn" data-size="lg" style="flex:1" onclick="openSheet('addSheet')">+ Add expense</button>
+      <button class="btn" data-variant="outline" data-size="lg" style="flex:1" onclick="openSheet('scanSheet')">🧾 Scan</button>
+    </div>
+    <div class="card"><div class="card-content">
+      <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">This month</p>
+      <div class="flex items-end justify-between mt-2"><p class="text-3xl font-bold text-slate-900">$312.40</p><span class="text-xs font-medium text-emerald-600">↑ 12% vs Oct</span></div>
+      <div class="mt-4"><p class="text-xs font-semibold text-slate-500 mb-2">Top category · 🍕 Food</p><div class="w-full h-2.5 bg-slate-100 rounded-full"><div class="w-[38%] h-full bg-amber-400 rounded-full"></div></div><div class="flex justify-between text-[11px] text-slate-400 mt-2"><span>38% of spend</span><button class="btn" data-variant="ghost" data-size="xs" onclick="showTab('analytics')">Details →</button></div></div>
+    </div></div>
+
+    <div class="flex items-center justify-between px-1"><p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Your groups</p><button class="btn" data-variant="ghost" data-size="sm" onclick="showTab('groups')">See all</button></div>
+    <div class="space-y-3">
+      <div class="card soft" onclick="openGroup('roommates')"><div class="card-content"><div class="flex items-center justify-between"><div><h3 class="font-bold text-slate-900 text-base">Roommates</h3><p class="text-sm text-emerald-600 font-semibold mt-0.5">You're owed $42.50</p></div><div class="flex -space-x-2"><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#818cf8;color:#fff">S</span></span><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#fda4af;color:#fff">P</span></span><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#fcd34d;color:#fff">J</span></span></div></div></div></div>
+      <div class="card soft" onclick="openGroup('japan')"><div class="card-content"><div class="flex items-center justify-between"><div><h3 class="font-bold text-slate-900 text-base">Japan Trip 2026</h3><p class="text-sm text-rose-600 font-semibold mt-0.5">You owe $180.00</p></div><div class="flex -space-x-2"><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#38bdf8;color:#fff">M</span></span><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#34d399;color:#fff">K</span></span><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:#c084fc;color:#fff">R</span></span></div></div></div></div>
+      <div class="card soft" onclick="openGroup('lunch')"><div class="card-content"><div class="flex items-center justify-between"><div><h3 class="font-bold text-slate-900 text-base">Team Lunch</h3><p class="text-sm text-slate-500 font-medium mt-0.5">All settled 🎉</p></div><span class="text-xs font-medium text-slate-400">3 members</span></div></div></div>
+    </div>
+
+    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide px-1 pt-2">Recent activity</p>
+    <div class="space-y-3">
+      <div class="card"><div class="card-content flex items-start gap-3">
+        <span class="w-11 h-11 rounded-2xl bg-amber-100 flex items-center justify-center text-lg shrink-0">🍕</span>
+        <div class="flex-1"><div class="flex items-start justify-between"><h4 class="font-semibold text-slate-900">Dinner at Olio</h4><span class="font-bold text-slate-900">$85.40</span></div><p class="text-xs text-slate-500 mt-0.5">Sam Carter · Roommates · Food</p>
+          <div class="flex items-center gap-2 mt-2"><span class="badge" style="background:#16a34a;color:#fff">You owe $21.35</span><button class="btn" data-variant="ghost" data-size="xs" onclick="toggleSplits(this)">Show ▾</button></div>
+          <details class="mt-3 pt-3 border-t border-slate-100"><summary class="hidden"></summary>
+            <div class="text-xs text-slate-500 space-y-1.5"><div class="flex justify-between"><span>Sam Carter · paid</span><span>$85.40</span></div><div class="flex justify-between"><span>Priya Patel</span><span>$21.35</span></div><div class="flex justify-between"><span>Jake Nguyen</span><span>$21.35</span></div><div class="flex justify-between"><span class="font-medium text-slate-900">Anurag <span class="ml-1 inline-flex px-1.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-700">you</span></span><span>$21.35</span></div></div></details>
+        </div></div>
+      </div>
+      <div class="card"><div class="card-content flex items-center gap-3"><span class="w-11 h-11 rounded-2xl bg-emerald-100 flex items-center justify-center text-lg shrink-0">🤝</span><div class="flex-1"><h4 class="font-semibold text-slate-900">Priya settled up</h4><p class="text-xs text-slate-500 mt-0.5">Paid you <span class="font-medium text-emerald-700">$21.35</span> via Venmo</p></div><span class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs font-bold">✓</span></div></div>
+      <div class="card"><div class="card-content flex items-center gap-3"><span class="w-11 h-11 rounded-2xl bg-rose-100 flex items-center justify-center text-lg shrink-0">💸</span><div class="flex-1"><h4 class="font-semibold text-slate-900">You owe Jake</h4><p class="text-xs text-slate-500 mt-0.5">$24.00 · Team Lunch</p><button class="btn" data-variant="ghost" data-size="sm" onclick="openSheet('settleSheet')">Settle up →</button></div></div></div>
+    </div>
+  </div>
+
+  <!-- GROUPS -->
+  <div id="view-groups" class="viewblock hidden px-5 pb-28 space-y-4">
+    <div class="flex items-center justify-between pt-2"><h2 class="text-xl font-bold text-slate-900">Groups</h2><button class="btn" data-size="lg" onclick="openSheet('newGroupSheet')">+ New</button></div>
+    <div class="card soft" onclick="openGroup('roommates')"><div class="card-content"><h3 class="font-bold text-slate-900 text-base">Roommates</h3><p class="text-sm text-emerald-600 font-semibold mt-0.5">You're owed $42.50</p><p class="text-xs text-slate-400 mt-2">4 members · 12 expenses · created Oct 2025</p></div></div>
+    <div class="card soft" onclick="openGroup('japan')"><div class="card-content"><h3 class="font-bold text-slate-900 text-base">Japan Trip 2026</h3><p class="text-sm text-rose-600 font-semibold mt-0.5">You owe $180.00</p><p class="text-xs text-slate-400 mt-2">3 members · Mar 2–16 · 8 expenses</p></div></div>
+    <div class="card soft" onclick="openGroup('lunch')"><div class="card-content"><h3 class="font-bold text-slate-900 text-base">Team Lunch</h3><p class="text-sm text-slate-500 font-medium mt-0.5">All settled 🎉</p><p class="text-xs text-slate-400 mt-2">3 members · Fridays · 6 expenses</p></div></div>
+  </div>
+
+  <!-- ANALYTICS -->
+  <div id="view-analytics" class="viewblock hidden px-5 pb-28 space-y-4">
+    <div class="pt-2"><h2 class="text-xl font-bold text-slate-900">Analytics</h2><p class="text-xs text-slate-400 mt-1">Your spending, at a glance.</p></div>
+    <div class="grid grid-cols-2 gap-3">
+      <div class="card"><div class="card-content"><p class="text-[11px] font-medium text-slate-500">This month</p><p class="text-2xl font-bold text-slate-900 mt-1">$312.40</p></div></div>
+      <div class="card"><div class="card-content"><p class="text-[11px] font-medium text-slate-500">All time</p><p class="text-2xl font-bold text-slate-900 mt-1">$1,842.10</p></div></div>
+    </div>
+    <div class="card"><div class="card-content">
+      <p class="text-sm font-bold text-slate-900 mb-4">By category</p>
+      <div class="flex items-center gap-4"><div class="w-24 h-24 rounded-full shrink-0" style="background:conic-gradient(#f59e0b 0% 38%,#16a34a 38% 58%,#0ea5e9 58% 78%,#e11d48 78% 100%)"></div>
+        <div class="text-xs text-slate-600 space-y-2"><div><span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 mr-1.5"></span>Food · 38% · $118.70</div><div><span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1.5"></span>Groceries · 20% · $62.30</div><div><span class="inline-block w-2.5 h-2.5 rounded-full bg-sky-500 mr-1.5"></span>Transport · 20% · $62.40</div><div><span class="inline-block w-2.5 h-2.5 rounded-full bg-rose-500 mr-1.5"></span>Fun · 22% · $69.00</div></div>
+      </div>
+    </div></div>
+    <div class="card"><div class="card-content">
+      <p class="text-sm font-bold text-slate-900 mb-4">Monthly spending</p>
+      <div class="flex items-end justify-between gap-2 h-28">
+        <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-slate-200 rounded-t" style="height:40%"></div><span class="text-[10px] text-slate-400">Jun</span></div>
+        <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-slate-200 rounded-t" style="height:52%"></div><span class="text-[10px] text-slate-400">Jul</span></div>
+        <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-slate-200 rounded-t" style="height:35%"></div><span class="text-[10px] text-slate-400">Aug</span></div>
+        <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-slate-200 rounded-t" style="height:60%"></div><span class="text-[10px] text-slate-400">Sep</span></div>
+        <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-slate-200 rounded-t" style="height:48%"></div><span class="text-[10px] text-slate-400">Oct</span></div>
+        <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full bg-amber-400 rounded-t" style="height:78%"></div><span class="text-[10px] text-amber-600 font-medium">Nov</span></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- PROFILE -->
+  <div id="view-profile" class="viewblock hidden px-5 pb-28 space-y-4">
+    <div class="pt-2"><h2 class="text-xl font-bold text-slate-900">Profile</h2></div>
+    <div class="card"><div class="card-content flex items-center gap-4">
+      <span class="avatar" data-size="lg"><span class="avatar-fallback" style="background:linear-gradient(135deg,#6366f1,#7c3aed);color:#fff;font-weight:700">A</span></span>
+      <div class="min-w-0"><p class="font-bold text-slate-900 text-base">Anurag Gaur</p><p class="text-[11px] text-slate-500 mt-0.5">Ed25519 fingerprint</p><p class="text-[11px] font-mono text-slate-400 mt-0.5 truncate">a3f9·2c7e·b81d·f04e</p></div>
+    </div></div>
+    <div class="card"><div class="card-content space-y-3">
+      <div class="grid gap-1"><label class="label">Name</label><input class="input" value="Anurag Gaur" /></div>
+      <div class="grid gap-1"><label class="label">Payment handles</label><input class="input" placeholder="Venmo: @anurag-gaur" /><input class="input" placeholder="Cash App: $anurag" /></div>
+    </div></div>
+    <button class="btn" data-variant="outline" data-size="lg" style="width:100%;color:#dc2626;border-color:#dc2626" onclick="toast('Identity reset (demo)')">Reset identity &amp; data</button>
+  </div>
+
+  <!-- Bottom tab bar -->
+  <nav class="fixed bottom-0 inset-x-0 z-40">
+    <div class="max-w-md mx-auto px-4 pb-4">
+      <div class="grid grid-cols-4 bg-white/95 backdrop-blur rounded-3xl soft border border-slate-200 p-1.5">
+        <button class="tabbtn tap flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-slate-400" data-tab="home" onclick="showTab('home')"><span class="text-xl">🏠</span><span class="text-[10px] font-semibold">Home</span></button>
+        <button class="tabbtn tap flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-slate-400" data-tab="groups" onclick="showTab('groups')"><span class="text-xl">👥</span><span class="text-[10px] font-semibold">Groups</span></button>
+        <button class="tabbtn tap flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-slate-400" data-tab="analytics" onclick="showTab('analytics')"><span class="text-xl">📊</span><span class="text-[10px] font-semibold">Analytics</span></button>
+        <button class="tabbtn tap flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-slate-400" data-tab="profile" onclick="showTab('profile')"><span class="text-xl">👤</span><span class="text-[10px] font-semibold">Profile</span></button>
+      </div>
+    </div>
+  </nav>
+</div>
+
+<!-- Sheets -->
+<dialog id="settleSheet" class="sheet" data-side="bottom">
+  <div class="sheet-header"><h2 class="sheet-title text-xl font-bold text-slate-900 flex items-center justify-between">Settle up<button class="btn" data-variant="ghost" data-size="icon" onclick="closeSheet('settleSheet')">✕</button></h2></div>
+  <div class="px-6 pb-6">
+    <p class="text-sm text-slate-500">You owe <span class="font-medium text-slate-900">Jake Nguyen</span> <span class="font-bold text-rose-600">$24.00</span> · Team Lunch</p>
+    <div class="mt-4 grid gap-2">
+      <a class="btn" data-variant="outline" data-size="lg" style="justify-content:flex-start;width:100%" href="venmo://pay?recipients=jake&amount=24.00&note=FairShare%20settle"><span class="w-5 h-5 rounded bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">V</span> Venmo</a>
+      <a class="btn" data-variant="outline" data-size="lg" style="justify-content:flex-start;width:100%" href="paypal://send?amount=24.00"><span class="w-5 h-5 rounded bg-sky-600 text-white text-[10px] font-bold flex items-center justify-center">P</span> PayPal</a>
+      <a class="btn" data-variant="outline" data-size="lg" style="justify-content:flex-start;width:100%" href="cash://pay/jake/24.00"><span class="w-5 h-5 rounded bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">$</span> Cash App</a>
+    </div>
+    <button class="btn" data-size="lg" style="width:100%;margin-top:1rem" onclick="markSettled()">Mark as settled ✓</button>
+  </div>
+</dialog>
+
+<dialog id="addSheet" class="sheet" data-side="bottom">
+  <div class="sheet-header"><h2 class="sheet-title text-xl font-bold text-slate-900 flex items-center justify-between">Add expense<button class="btn" data-variant="ghost" data-size="icon" onclick="closeSheet('addSheet')">✕</button></h2></div>
+  <div class="px-6 pb-6 grid gap-3">
+    <div class="grid gap-1"><label class="label">Description</label><input class="input" value="Dinner at Olio" /></div>
+    <div class="grid grid-cols-2 gap-3"><div class="grid gap-1"><label class="label">Amount</label><input class="input" value="85.40" /></div><div class="grid gap-1"><label class="label">Group</label><select class="input"><option>Roommates</option><option>Japan Trip 2026</option></select></div></div>
+    <div class="flex flex-wrap gap-1.5"><span class="badge" style="background:#f59e0b;color:#fff">🍕 Food</span><span class="badge" data-variant="outline">🛒 Groceries</span><span class="badge" data-variant="outline">🚕 Transport</span></div>
+    <div class="grid grid-cols-2 gap-2"><button class="btn" data-size="lg" onclick="setSplit(this)">Equal</button><button class="btn" data-variant="secondary" data-size="lg" onclick="setSplit(this)">Custom</button></div>
+    <div class="grid grid-cols-2 gap-2"><button class="btn" data-variant="outline" data-size="lg" onclick="closeSheet('addSheet')">Cancel</button><button class="btn" data-size="lg" onclick="closeSheet('addSheet');toast('Expense added')">Save</button></div>
+  </div>
+</dialog>
+
+<dialog id="scanSheet" class="sheet" data-side="bottom">
+  <div class="sheet-header"><h2 class="sheet-title text-xl font-bold text-slate-900 flex items-center justify-between">Scan receipt<button class="btn" data-variant="ghost" data-size="icon" onclick="closeSheet('scanSheet')">✕</button></h2></div>
+  <div class="px-6 pb-6"><div class="border-2 border-dashed border-slate-200 rounded-3xl p-10 text-center"><span class="text-4xl">🧾</span><p class="text-sm text-slate-500 mt-3">Drop a receipt photo</p><button class="btn" data-size="lg" style="margin-top:1rem" onclick="closeSheet('scanSheet');toast('Demo: 4 items detected')">Choose photo</button></div><p class="text-[11px] text-slate-400 mt-4 text-center">OCR on-device · image never leaves your browser</p></div>
+</dialog>
+
+<dialog id="newGroupSheet" class="sheet" data-side="bottom">
+  <div class="sheet-header"><h2 class="sheet-title text-xl font-bold text-slate-900 flex items-center justify-between">New group<button class="btn" data-variant="ghost" data-size="icon" onclick="closeSheet('newGroupSheet')">✕</button></h2></div>
+  <div class="px-6 pb-6 grid gap-3">
+    <div class="grid gap-1"><label class="label">Group name</label><input class="input" placeholder="Weekend Ski Trip" /></div>
+    <div class="grid gap-1"><label class="label">Members (comma separated)</label><input class="input" placeholder="Sam Carter, Priya Patel" /></div>
+    <button class="btn" data-size="lg" onclick="closeSheet('newGroupSheet');toast('Group created')">Create group</button>
+  </div>
+</dialog>
+
+<dialog id="groupSheet" class="sheet" data-side="bottom">
+  <div class="sheet-header"><h2 class="sheet-title text-xl font-bold text-slate-900 flex items-center justify-between" id="groupTitle"><button class="btn" data-variant="ghost" data-size="icon" onclick="closeSheet('groupSheet')">✕</button></h2></div>
+  <div class="px-6 pb-6" id="groupBody"></div>
+</dialog>
+
+<div id="toast" class="hidden fixed bottom-28 left-1/2 -translate-x-1/2 z-[70] bg-slate-900 text-white text-sm font-semibold px-4 py-3 rounded-2xl shadow-lg fade-in max-w-[90vw] text-center"></div>
+
+<script>
+function showTab(name){
+  document.querySelectorAll('.viewblock').forEach(v=>v.classList.add('hidden'));
+  document.getElementById('view-'+name).classList.remove('hidden');
+  document.querySelectorAll('.tabbtn').forEach(b=>{const on=b.dataset.tab===name;b.classList.toggle('text-slate-900',on);b.classList.toggle('text-slate-400',!on);});
+  window.scrollTo({top:0});
+}
+function toggleSplits(btn){const det=btn.closest('.card').querySelector('details');det.open=!det.open;btn.textContent=det.open?'Hide ▴':'Show ▾';}
+function setSplit(btn){const wrap=btn.closest('.grid');wrap.querySelectorAll('.btn').forEach(b=>b.setAttribute('data-variant','secondary'));btn.setAttribute('data-variant','default');}
+function openSheet(id){const d=document.getElementById(id);if(id==='groupSheet')return;d.showModal();}
+function openGroup(name){
+  const data={roommates:{name:'Roommates',sub:'4 members · 12 expenses',balances:[['S','Sam Carter','#818cf8','owes $42.50','text-rose-600'],['P','Priya Patel','#fda4af','owes $21.35','text-rose-600'],['J','Jake Nguyen','#fcd34d','owes you $46.73','text-emerald-600'],['A','You','#0f172a','+$42.50','text-slate-900']]},japan:{name:'Japan Trip 2026',sub:'3 members · Mar 2–16',balances:[['M','Maya Lin','#38bdf8','owes you $79.33','text-emerald-600'],['K','Kenji Sato','#34d399','owes you $40.00','text-emerald-600'],['A','You','#0f172a','−$180.00','text-rose-600']]},lunch:{name:'Team Lunch',sub:'3 members · Fridays',balances:[]}}[name];
+  document.getElementById('groupTitle').innerHTML=data.name+' <button class="btn" data-variant="ghost" data-size="icon" onclick="closeSheet(\'groupSheet\')">✕</button>';
+  let bal='';
+  if(data.balances.length){bal='<p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mt-5 mb-2">Balances</p><div class="space-y-2">'+data.balances.map(b=>`<div class="flex items-center justify-between px-3 py-3 rounded-2xl bg-slate-50"><div class="flex items-center gap-2.5"><span class="avatar" data-size="sm"><span class="avatar-fallback" style="background:${b[2]};color:#fff">${b[0]}</span></span><span class="text-sm font-medium text-slate-800">${b[1]}</span></div><span class="text-sm font-semibold ${b[4]}">${b[3]}</span></div>`).join('')+'</div>';}
+  else{bal='<div class="flex flex-col items-center py-6 text-center"><span class="text-3xl">🎉</span><p class="text-sm text-slate-500 mt-2">Everyone\'s settled up.</p></div>';}
+  document.getElementById('groupBody').innerHTML=`<p class="text-xs text-slate-400">${data.sub}</p>${bal}<button class="btn" data-size="lg" style="width:100%;margin-top:1.25rem" onclick="closeSheet('groupSheet');openSheet('settleSheet')">Settle up with group</button>`;
+  document.getElementById('groupSheet').showModal();
+}
+document.addEventListener('click',e=>{const g=e.target.closest('[data-group]');if(g){openGroup(g.dataset.group);}});
+function closeSheet(id){document.getElementById(id).close();}
+function markSettled(){closeSheet('settleSheet');toast('Marked as settled ✓');}
+let toastTimer;
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.add('hidden'),2200);}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('dialog.sheet').forEach(d=>d.close());});
+showTab('home');
+</script>
+</body>
+</html>
