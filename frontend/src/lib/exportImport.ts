@@ -24,7 +24,7 @@ import type {
 
 const FORMAT = 'fairshare-export'
 const SOURCE_APP = 'fairshare'
-const CURRENT_SCHEMA_VERSION = 2
+const CURRENT_SCHEMA_VERSION = 3
 
 export interface ExportEnvelope {
   format: typeof FORMAT
@@ -85,6 +85,15 @@ export function parseJSON(text: string): { data: StoreState; schema_version: num
       if (g.couple_mode === undefined) {
         ;(g as { couple_mode?: boolean }).couple_mode = undefined
       }
+    }
+    // F10 migration: files exported before the activity log carry no `activityLog`
+    // array or `nextActivityId` counter. Default them so downstream code never sees
+    // an undefined array.
+    if (!Array.isArray(data.activityLog)) {
+      ;(data as { activityLog: unknown[] }).activityLog = []
+    }
+    if (!data.nextActivityId) {
+      ;(data as { nextActivityId: number }).nextActivityId = 1
     }
   }
   return { data, schema_version: o.schema_version }
@@ -153,6 +162,9 @@ function isSettlementRecord(r: unknown): r is SettlementRecord {
 function isCommentRecord(r: unknown): r is CommentRecord {
   return isRecord(r) && isNumber(r.id) && isString(r.expense_uuid) && isString(r.author_id)
 }
+function isActivityLogEntryRecord(r: unknown): r is Record<string, unknown> {
+  return isRecord(r) && isNumber(r.id) && isString(r.uuid) && isNumber(r.group_id) && isString(r.type) && isString(r.actor_id)
+}
 
 function isRecordArray(r: unknown, check: (x: unknown) => boolean): boolean {
   return Array.isArray(r) && r.every(check)
@@ -169,7 +181,8 @@ function isStoreState(v: unknown): v is StoreState {
     isRecordArray(o.expenseSplits, isExpenseSplitRecord) &&
     isRecordArray(o.settlements, isSettlementRecord) &&
     isRecordArray(o.comments, isCommentRecord) &&
-    (o.couples === undefined || isRecordArray(o.couples, isCoupleRecord))
+    (o.couples === undefined || isRecordArray(o.couples, isCoupleRecord)) &&
+    (o.activityLog === undefined || isRecordArray(o.activityLog, isActivityLogEntryRecord))
   )
 }
 
@@ -384,6 +397,8 @@ function emptyImportState(): StoreState {
     nextCommentId: 1,
     nextCoupleId: 1,
     nextInviteId: 1,
+    activityLog: [],
+    nextActivityId: 1,
   }
 }
 

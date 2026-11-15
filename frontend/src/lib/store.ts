@@ -1,4 +1,4 @@
-import type { Expense, ExpenseSplit, Settlement, Member, PaymentHandles, Comment } from './engine'
+import type { Expense, ExpenseSplit, Settlement, Member, PaymentHandles, Comment, ActivityLogEntry } from './engine'
 import { getLocalUser, getIdentityKeys } from './identity'
 
 const STORAGE_KEY = 'fairshare_store'
@@ -55,6 +55,18 @@ export interface PendingInviteRecord {
   token: string
   status: 'pending' | 'accepted' | 'declined'
   created_at: string
+}
+
+export interface ActivityLogEntryRecord {
+  id: number
+  uuid: string
+  group_id: number
+  type: string
+  actor_id: string
+  actor_name: string
+  created_at: string
+  entity_uuid?: string | null
+  payload?: Record<string, unknown> | null
 }
 
 export interface GroupMemberRecord {
@@ -125,6 +137,8 @@ export interface StoreState {
   nextCommentId: number
   nextCoupleId: number
   nextInviteId: number
+  activityLog: ActivityLogEntry[]
+  nextActivityId: number
 }
 
 /* ─── Public store class ─── */
@@ -173,6 +187,8 @@ export class LocalStore {
     if (!state.nextCoupleId) state.nextCoupleId = 1
     if (!Array.isArray(state.pendingInvites)) state.pendingInvites = []
     if (!state.nextInviteId) state.nextInviteId = 1
+    if (!Array.isArray(state.activityLog)) state.activityLog = []
+    if (!state.nextActivityId) state.nextActivityId = 1
 
     for (const exp of state.expenses) {
       if (!exp.uuid) exp.uuid = crypto.randomUUID()
@@ -192,6 +208,67 @@ export class LocalStore {
     for (const c of state.couples) {
       if (!c.uuid) c.uuid = crypto.randomUUID()
     }
+
+    // Derive ActivityLogEntry records for existing expenses, settlements, and
+    // comments that don't already have a corresponding entry (F10 backfill).
+    const existingEntryKeys = new Set<string>()
+    for (const entry of state.activityLog) {
+      if (entry.type === 'comment_added') {
+        existingEntryKeys.add(`${entry.group_id}|comment_added|${entry.actor_id}|${entry.created_at}`)
+      } else if (entry.entity_uuid) {
+        existingEntryKeys.add(`${entry.entity_uuid}|${entry.type}`)
+      }
+    }
+
+    let nextId = state.nextActivityId
+    for (const exp of state.expenses) {
+      const key = `${exp.uuid}|expense_added`
+      if (existingEntryKeys.has(key)) continue
+      const user = state.users.find((u) => u.id === exp.paid_by)
+      const actorName = user?.name || 'Unknown'
+      state.activityLog.push({
+        id: nextId++,
+        uuid: crypto.randomUUID(),
+        group_id: exp.group_id,
+        type: 'expense_added' as const,
+        actor_id: exp.paid_by,
+        actor_name: actorName,
+        created_at: exp.created_at,
+        entity_uuid: exp.uuid,
+      })
+    }
+    for (const s of state.settlements) {
+      const key = `${s.uuid}|settlement_created`
+      if (existingEntryKeys.has(key)) continue
+      const user = state.users.find((u) => u.id === s.from_user)
+      const actorName = user?.name || 'Unknown'
+      state.activityLog.push({
+        id: nextId++,
+        uuid: crypto.randomUUID(),
+        group_id: s.group_id,
+        type: 'settlement_created' as const,
+        actor_id: s.from_user,
+        actor_name: actorName,
+        created_at: s.created_at,
+        entity_uuid: s.uuid,
+      })
+    }
+    for (const c of state.comments) {
+      const key = `${c.group_id}|comment_added|${c.author_id}|${c.created_at}`
+      if (existingEntryKeys.has(key)) continue
+      state.activityLog.push({
+        id: nextId++,
+        uuid: crypto.randomUUID(),
+        group_id: c.group_id,
+        type: 'comment_added' as const,
+        actor_id: c.author_id,
+        actor_name: c.author_name,
+        created_at: c.created_at,
+        entity_uuid: c.expense_uuid,
+      })
+    }
+    state.nextActivityId = nextId
+
     this.ensureLocalUserKeys(state)
     return state
   }
@@ -234,6 +311,8 @@ export class LocalStore {
       nextCommentId: 1,
       nextCoupleId: 1,
       nextInviteId: 1,
+      activityLog: [],
+      nextActivityId: 1,
     }
   }
 
@@ -711,6 +790,45 @@ export class LocalStore {
     return true
   }
 
+  /* ─── Activity Log (F10) ─── */
+
+  /**
+   * Append a new activity log entry. Generates the numeric `id`, `uuid`, and
+   * `created_at` timestamp; pushes to the store and persists. Returns the
+   * complete entry.
+   */
+  logActivity(entry: Omit<ActivityLogEntry, 'id' | 'uuid' | 'created_at'> & { uuid?: string; created_at?: string }): ActivityLogEntry {
+    const id = this.state.nextActivityId++
+    const uuid = entry.uuid ?? crypto.randomUUID()
+    const created_at = entry.created_at ?? new Date().toISOString()
+    const record: ActivityLogEntry = {
+      id,
+      uuid,
+      group_id: entry.group_id,
+      type: entry.type,
+      actor_id: entry.actor_id,
+      actor_name: entry.actor_name,
+      created_at,
+      entity_uuid: entry.entity_uuid,
+      payload: entry.payload,
+    }
+    this.state.activityLog.push(record)
+    this.save()
+    return { ...record }
+  }
+
+  /** Return all activity log entries for a group, sorted by created_at ascending. */
+  getGroupActivityLog(groupId: number): ActivityLogEntry[] {
+    return this.state.activityLog
+      .filter((e) => e.group_id === groupId)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+  }
+
+  /** Look up a single activity log entry by its stable uuid. */
+  getActivityByUuid(uuid: string): ActivityLogEntry | undefined {
+    return this.state.activityLog.find((e) => e.uuid === uuid)
+  }
+
   /* ─── Raw data export for sync ─── */
 
   getAllData(): StoreState {
@@ -751,6 +869,7 @@ export class LocalStore {
     for (const s of state.settlements) if (!s.uuid) s.uuid = crypto.randomUUID()
     for (const c of state.couples ?? []) if (!c.uuid) c.uuid = crypto.randomUUID()
     for (const p of state.pendingInvites ?? []) if (!p.uuid) p.uuid = crypto.randomUUID()
+    for (const a of state.activityLog ?? []) if (!a.uuid) a.uuid = crypto.randomUUID()
   }
 
   /**
@@ -769,6 +888,7 @@ export class LocalStore {
     next.comments = Array.isArray(next.comments) ? next.comments : []
     next.couples = Array.isArray(next.couples) ? next.couples : []
     next.pendingInvites = Array.isArray(next.pendingInvites) ? next.pendingInvites : []
+    next.activityLog = Array.isArray(next.activityLog) ? next.activityLog : []
     this.ensureUuids(next)
     this.fixCommentExpenseIds(next)
     return this.recomputeCounters(next)
@@ -792,6 +912,7 @@ export class LocalStore {
     state.nextCommentId = maxId(state.comments) + 1
     state.nextCoupleId = maxId(state.couples ?? []) + 1
     state.nextInviteId = maxId(state.pendingInvites ?? []) + 1
+    state.nextActivityId = maxId(state.activityLog ?? []) + 1
     return state
   }
 
@@ -812,6 +933,7 @@ export class LocalStore {
     const nextComments: CommentRecord[] = [...cur.comments]
     const nextCouples: CoupleRecord[] = [...(cur.couples ?? [])]
     const nextPendingInvites: PendingInviteRecord[] = [...(cur.pendingInvites ?? [])]
+    const nextActivityLog: ActivityLogEntry[] = [...(cur.activityLog ?? [])]
 
     // Maps from the *imported* numeric id to the imported uuid (join keys)
     const importedGroupIdToUuid = new Map<number, string>()
@@ -990,7 +1112,14 @@ export class LocalStore {
         author_name: ic.author_name,
         text: ic.text,
         created_at: ic.created_at,
-      })
+            })
+    }
+
+    // Activity log: dedupe by uuid, then append (idempotent — re-delivery doesn't duplicate)
+    for (const entry of imported.activityLog ?? []) {
+      const existing = nextActivityLog.find((e) => e.uuid === entry.uuid)
+      if (existing) continue
+      nextActivityLog.push({ ...entry, id: nextIdFrom(nextActivityLog) })
     }
 
     return this.recomputeCounters({
@@ -1010,6 +1139,8 @@ export class LocalStore {
       nextCommentId: 1,
       nextCoupleId: 1,
       nextInviteId: 1,
+      activityLog: nextActivityLog,
+      nextActivityId: 1,
     })
   }
 }
