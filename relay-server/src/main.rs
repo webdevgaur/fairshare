@@ -310,8 +310,13 @@ async fn handle_connection(
             Ok(Message::Ping(data)) => {
                 let _ = tx.send(Message::Pong(data));
             }
+            Ok(Message::Binary(data)) => {
+                // E2E sealed op — forward opaque bytes verbatim to the room,
+                // excluding this socket. The relay never inspects the payload.
+                broadcast_binary_to_room(&state, &group_id, &data, Some(&peer_id));
+            }
             Ok(_) => {
-                // Ignore binary/pong frames
+                // Ignore pong/other frames
             }
             Err(e) => {
                 warn!("WebSocket error for peer {peer_id}: {e}");
@@ -346,6 +351,27 @@ fn broadcast_to_room(
                 }
             }
             let _ = peer.tx.send(Message::Text(payload.clone().into()));
+        }
+    }
+}
+
+/// Forward an opaque binary (E2E sealed envelope) to every peer in a room,
+/// excluding the sending socket. The relay never parses or inspects the bytes —
+/// it is a dumb forwarder (ADR Decision 3A).
+fn broadcast_binary_to_room(
+    state: &AppState,
+    group_id: &str,
+    data: &[u8],
+    exclude_peer_id: Option<&str>,
+) {
+    if let Some(room) = state.rooms.get(group_id) {
+        for peer in room.iter() {
+            if let Some(exclude) = exclude_peer_id {
+                if peer.peer_id == exclude {
+                    continue;
+                }
+            }
+            let _ = peer.tx.send(Message::Binary(data.to_vec().into()));
         }
     }
 }

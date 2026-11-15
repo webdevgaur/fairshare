@@ -1,4 +1,5 @@
 import type { Expense, ExpenseSplit, Settlement, Member, PaymentHandles, Comment } from './engine'
+import { getLocalUser, getIdentityKeys } from './identity'
 
 const STORAGE_KEY = 'fairshare_store'
 
@@ -7,6 +8,10 @@ const STORAGE_KEY = 'fairshare_store'
 export interface UserRecord {
   id: string
   name: string
+  /** Ed25519 public key (hex) — used to verify signed E2E envelopes. */
+  publicKey?: string
+  /** X25519 encryption public key (hex) — used for per-recipient E2E key agreement. */
+  x25519PublicKey?: string
   venmo_username?: string | null
   paypal_handle?: string | null
   cashapp_cashtag?: string | null
@@ -145,7 +150,28 @@ export class LocalStore {
         s.created_at = s.date ? `${s.date}T00:00:00.000Z` : new Date().toISOString()
       }
     }
+    this.ensureLocalUserKeys(state)
     return state
+  }
+
+  /**
+   * Ensure the local user's record carries the current Ed25519 + X25519 public
+   * keys (ADR-E2E-ENCRYPTION §4/§6). A `publicKey` gap was flagged in the ADR as
+   * a prerequisite — member keys are needed for per-recipient sealing. New
+   * stores or restored stores are backfilled here; `upsertUser` also refreshes
+   * them on save.
+   */
+  private ensureLocalUserKeys(state: StoreState): void {
+    const local = getLocalUser()
+    if (!local) return
+    const keys = getIdentityKeys()
+    let rec = state.users.find((u) => u.id === local.id)
+    if (!rec) {
+      rec = { id: local.id, name: local.name }
+      state.users.push(rec)
+    }
+    rec.publicKey = keys.publicKey
+    rec.x25519PublicKey = keys.x25519PublicKey
   }
 
   private emptyState(): StoreState {
@@ -181,6 +207,8 @@ export class LocalStore {
       existing = { id, name }
       this.state.users.push(existing)
     }
+    // Keep the local user's public keys current for per-recipient E2E sealing.
+    this.ensureLocalUserKeys(this.state)
     this.save()
     return existing
   }
@@ -269,6 +297,33 @@ export class LocalStore {
         return u ? { id: u.id, name: u.name } : null
       })
       .filter((m): m is Member => m !== null)
+  }
+
+  /**
+   * Return the hex X25519 encryption public keys for every member of a group
+   * that has published one. Used by the sync client to seal ops per-recipient.
+   * A group is E2E-capable only when every member has a key; a member with no
+   * key (e.g. a legacy device) forces the group onto the plaintext demo path.
+   */
+  getGroupMemberX25519PublicKeys(groupId: number): string[] {
+    const userIds = this.state.groupMembers
+      .filter((gm) => gm.group_id === groupId)
+      .map((gm) => gm.user_id)
+    return userIds
+      .map((uid) => this.state.users.find((u) => u.id === uid)?.x25519PublicKey)
+      .filter((k): k is string => typeof k === 'string' && k.length > 0)
+  }
+
+  /** Whether every member of a group has an X25519 public key (i.e. E2E-ready). */
+  isGroupE2EReady(groupId: number): boolean {
+    const userIds = this.state.groupMembers
+      .filter((gm) => gm.group_id === groupId)
+      .map((gm) => gm.user_id)
+    if (userIds.length === 0) return false
+    return userIds.every((uid) => {
+      const u = this.state.users.find((usr) => usr.id === uid)
+      return !!u?.x25519PublicKey
+    })
   }
 
   /* ─── Expenses ─── */
