@@ -28,7 +28,7 @@ export interface CRDTOperation {
   /** Globally unique operation ID (nanoid-style) */
   op_id: string
   /** Operation type */
-  type: 'create_group' | 'create_expense' | 'create_settlement' | 'create_comment' | 'update_group' | 'update_profile'
+  type: 'create_group' | 'create_expense' | 'create_settlement' | 'create_comment' | 'update_group' | 'update_profile' | 'register_couple' | 'unregister_couple' | 'remove_couple'
   /** Group this operation belongs to */
   group_id: string | number
   /** Lamport clock value at time of creation */
@@ -36,10 +36,25 @@ export interface CRDTOperation {
   /** Peer ID that created this operation */
   peer_id: string
   /** Operation-specific payload */
-  data: Record<string, unknown>
+  data: CRDTOperationData
   /** Unix ms timestamp */
   created_at: number
 }
+
+/**
+ * Operation-specific payload shapes, discriminated by the op `type`. The
+ * couple ops (F9) carry the two partner user ids and the device-local couple
+ * id; updates to a group's couple-mode toggle ride on `update_group`.
+ */
+export type CRDTOperationData =
+  | { id?: number; uuid?: string; name: string; description: string | null; member_ids: string[]; created_at?: string; couple_mode?: boolean }
+  | { group_id?: number; id?: number; amount: number; description: string; paid_by: string; splits: { user_id: string; amount: number }[]; uuid?: string; date?: string; created_at?: string; category?: string }
+  | { group_id?: number; id?: number; uuid?: string; from_user: string; to_user: string; amount: number; date?: string; created_at?: string }
+  | { group_id?: number; id?: number; expense_uuid: string; expense_id?: number; author_id: string; author_name: string; text: string; created_at?: string }
+  | { group_id?: number; couple_mode?: boolean }
+  | { user_id: string; handles: PaymentHandles }
+  | { user_a: string; user_b: string; couple_id?: number; uuid?: string }
+  | { couple_id?: number; uuid?: string }
 
 interface QueuedOp {
   op: CRDTOperation
@@ -343,7 +358,7 @@ class SyncClient {
    */
   enqueue(
     type: CRDTOperation['type'],
-    data: Record<string, unknown>,
+    data: CRDTOperationData,
     groupId?: string | number,
   ): CRDTOperation {
     const gid = String(groupId ?? this.currentGroupId ?? 'unknown')
@@ -659,19 +674,52 @@ class SyncClient {
             id?: number
             uuid?: string
             created_at?: string
+            couple_mode?: boolean
           }
-          store.createGroup(
+          const group = store.createGroup(
             d.name,
             d.description ?? null,
             d.member_ids,
             { uuid: d.uuid ?? op.op_id, created_at: d.created_at },
           )
+          // Apply the creator's couple-mode toggle to the group as-is. The
+          // numeric `group.id` is freshly minted on this device but the toggle
+          // is a boolean that has no cross-device id, so it maps directly.
+          if (d.couple_mode !== undefined) store.setGroupCoupleMode(group.id, d.couple_mode)
           break
         }
 
-      case 'update_group':
-        // Group metadata LWW update — store doesn't support edits yet
+      case 'update_group': {
+        // Group metadata LWW update — currently only the couple-mode toggle is
+        // mutable, so we apply that and ignore anything else the op carries.
+        const d = op.data as { group_id?: number; couple_mode?: boolean }
+        if (d.group_id !== undefined && d.couple_mode !== undefined) {
+          store.setGroupCoupleMode(Number(d.group_id), d.couple_mode)
+        }
         break
+      }
+
+      case 'register_couple': {
+        const d = op.data as { user_a: string; user_b: string; couple_id?: number; uuid?: string }
+        try {
+          store.registerCouple(d.user_a, d.user_b)
+        } catch (err) {
+          // e.g. a user is already in a couple, or missing — the op is invalid
+          // locally; log and continue (it will be re-applied idempotently).
+          console.warn('[sync] register_couple rejected:', (err as Error).message)
+        }
+        break
+      }
+
+      case 'unregister_couple':
+      case 'remove_couple': {
+        const d = op.data as { couple_id?: number; uuid?: string }
+        // Couples are identified by device-local numeric id on the sending
+        // device; fall back to the stable uuid when present.
+        const id = d.couple_id ?? Number(d.uuid ?? NaN)
+        if (Number.isFinite(id) && id > 0) store.removeCouple(id)
+        break
+      }
 
       case 'update_profile': {
         const d = op.data as { user_id: string; handles: PaymentHandles }

@@ -62,7 +62,7 @@ test.describe('F5 — Export / Import', () => {
     const json = await clickAndDownload(page, 'Export JSON')
     const envelope = JSON.parse(json)
     expect(envelope.format).toBe('fairshare-export')
-    expect(envelope.schema_version).toBe(1)
+    expect(envelope.schema_version).toBe(2)
     expect(envelope.source_app).toBe('fairshare')
     expect(envelope.exported_at).toBeTruthy()
     expect(Array.isArray(envelope.data.groups)).toBe(true)

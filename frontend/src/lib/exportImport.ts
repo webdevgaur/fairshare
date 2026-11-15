@@ -17,13 +17,14 @@ import type {
   ExpenseSplitRecord,
   SettlementRecord,
   CommentRecord,
+  CoupleRecord,
 } from './store'
 
 /* ─── JSON envelope ─── */
 
 const FORMAT = 'fairshare-export'
 const SOURCE_APP = 'fairshare'
-const CURRENT_SCHEMA_VERSION = 1
+const CURRENT_SCHEMA_VERSION = 2
 
 export interface ExportEnvelope {
   format: typeof FORMAT
@@ -65,14 +66,28 @@ export function parseJSON(text: string): { data: StoreState; schema_version: num
   const o = parsed as Record<string, unknown>
   if (o.format !== FORMAT) throw new Error('This file is not a FairShare export (missing format marker).')
   if (typeof o.schema_version !== 'number') throw new Error('This export is missing a schema_version.')
-  if (o.schema_version !== CURRENT_SCHEMA_VERSION) {
-    if (o.schema_version > CURRENT_SCHEMA_VERSION) {
-      throw new Error('This export was created by a newer version of FairShare. Please update the app.')
-    }
-    throw new Error(`Unsupported schema_version ${o.schema_version}.`)
+  // Accept current and older versions (migrated below); only reject a future
+  // version, since a newer app may have stores this one can't represent.
+  if (o.schema_version > CURRENT_SCHEMA_VERSION) {
+    throw new Error('This export was created by a newer version of FairShare. Please update the app.')
   }
   if (!isStoreState(o.data)) throw new Error('The export data is malformed or incomplete.')
-  return { data: o.data as StoreState, schema_version: o.schema_version }
+  const data = o.data as StoreState
+  // F9 migration: files exported before couple mode carry no `couples` array and
+  // no per-group `couple_mode`. Default them so downstream code (and the store's
+  // merge/replace path) never sees an undefined array. `couple_mode` defaults to
+  // undefined = OFF, and `couples` to an empty list.
+  if (o.schema_version < CURRENT_SCHEMA_VERSION) {
+    if (!Array.isArray(data.couples)) {
+      ;(data as { couples: CoupleRecord[] }).couples = []
+    }
+    for (const g of data.groups) {
+      if (g.couple_mode === undefined) {
+        ;(g as { couple_mode?: boolean }).couple_mode = undefined
+      }
+    }
+  }
+  return { data, schema_version: o.schema_version }
 }
 
 /* ─── Runtime type guard (hand-rolled — no zod/ajv) ─── */
@@ -91,7 +106,22 @@ function isUserRecord(r: unknown): r is UserRecord {
   return isRecord(r) && isString(r.id) && isString(r.name)
 }
 function isGroupRecord(r: unknown): r is GroupRecord {
-  return isRecord(r) && isNumber(r.id) && isString(r.uuid) && isString(r.name)
+  return (
+    isRecord(r) &&
+    isNumber(r.id) &&
+    isString(r.uuid) &&
+    isString(r.name) &&
+    (r.couple_mode === undefined || typeof r.couple_mode === 'boolean')
+  )
+}
+function isCoupleRecord(r: unknown): r is CoupleRecord {
+  return (
+    isRecord(r) &&
+    isNumber(r.id) &&
+    isString(r.uuid) &&
+    isString(r.user_a) &&
+    isString(r.user_b)
+  )
 }
 function isGroupMemberRecord(r: unknown): r is GroupMemberRecord {
   return isRecord(r) && isNumber(r.group_id) && isString(r.user_id)
@@ -138,7 +168,8 @@ function isStoreState(v: unknown): v is StoreState {
     isRecordArray(o.expenses, isExpenseRecord) &&
     isRecordArray(o.expenseSplits, isExpenseSplitRecord) &&
     isRecordArray(o.settlements, isSettlementRecord) &&
-    isRecordArray(o.comments, isCommentRecord)
+    isRecordArray(o.comments, isCommentRecord) &&
+    (o.couples === undefined || isRecordArray(o.couples, isCoupleRecord))
   )
 }
 
@@ -344,11 +375,13 @@ function emptyImportState(): StoreState {
     expenseSplits: [],
     settlements: [],
     comments: [],
+    couples: [],
     nextGroupId: 1,
     nextExpenseId: 1,
     nextSettlementId: 1,
     nextSplitId: 1,
     nextCommentId: 1,
+    nextCoupleId: 1,
   }
 }
 

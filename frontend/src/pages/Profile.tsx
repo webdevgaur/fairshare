@@ -2,7 +2,8 @@ import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getLocalUser, setLocalUser, clearLocalUser, getPublicKeyHex } from '../lib/identity'
 import { fingerprint } from '../lib/crypto'
-import { getUserPaymentHandles, updatePaymentHandles, exportData, importJSON, importSplitwiseCSV, isSplitwiseImport } from '../lib/api'
+import { getUserPaymentHandles, updatePaymentHandles, exportData, importJSON, importSplitwiseCSV, isSplitwiseImport, getCoupleForUser, registerCouple, unregisterCouple, getUserName, getUsers } from '../lib/api'
+import type { CoupleRecord } from '../lib/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
@@ -32,6 +33,12 @@ export default function Profile() {
   const [paypal, setPaypal] = useState(() => getUserPaymentHandles(userId)?.paypal_handle ?? '')
   const [cashapp, setCashapp] = useState(() => getUserPaymentHandles(userId)?.cashapp_cashtag ?? '')
   const [handlesSaved, setHandlesSaved] = useState(false)
+
+  // Couple (F9)
+  const [couple, setCouple] = useState<CoupleRecord | null>(() => getCoupleForUser(userId) ?? null)
+  const [partnerInput, setPartnerInput] = useState('')
+  const [coupleMsg, setCoupleMsg] = useState('')
+  const [coupleErr, setCoupleErr] = useState('')
 
   // Export / import (F5)
   const [impStatus, setImpStatus] = useState('')
@@ -91,11 +98,47 @@ export default function Profile() {
     setTimeout(() => setHandlesSaved(false), 2000)
   }
 
+  function handleRegisterCouple(e: React.FormEvent) {
+    e.preventDefault()
+    setCoupleErr('')
+    setCoupleMsg('')
+    if (!userId || !partnerInput.trim()) return
+    const input = partnerInput.trim()
+    // Resolve the partner by name (case-insensitive) first, then by exact id.
+    const users = getUsers()
+    const byName = users.find((u) => u.name.toLowerCase() === input.toLowerCase() && u.id !== userId)
+    const byId = users.find((u) => u.id === input && u.id !== userId)
+    const partnerId = byName ? byName.id : byId ? byId.id : input
+    if (partnerId === userId) {
+      setCoupleErr('You cannot register yourself as your partner.')
+      return
+    }
+    try {
+      const c = registerCouple(userId, partnerId)
+      setCouple(c)
+      setPartnerInput('')
+      setCoupleMsg('Registered as a couple.')
+    } catch (err) {
+      setCoupleErr((err as Error).message)
+    }
+  }
+
+  function handleUnregister() {
+    if (!couple) return
+    if (!window.confirm('Unregister this couple? You will no longer be netted with them in group settlements.')) return
+    unregisterCouple(couple.id)
+    setCouple(null)
+    setCoupleMsg('Couple unregistered.')
+  }
+
   function handleReset() {
     if (!window.confirm('Reset identity? This will generate a new keypair and clear your name. Your groups and expenses will remain.')) return
     clearLocalUser()
     navigate('/')
   }
+
+  const partnerId = couple ? (couple.user_a === userId ? couple.user_b : couple.user_a) : ''
+  const partnerName = partnerId ? getUserName(partnerId) : ''
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -169,6 +212,42 @@ export default function Profile() {
             </Button>
           </div>
         </form>
+      </Card>
+
+      {/* Couple (F9) */}
+      <Card className="p-4">
+        <h2 className="text-xs uppercase tracking-wider font-medium text-slate-400 mb-3">Couple</h2>
+        {couple ? (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">
+              Registered with <span className="font-medium text-slate-900">{partnerName || partnerId}</span>.
+            </p>
+            <p className="text-xs text-slate-400">
+              In any group where couple mode is on, you won't be suggested to settle up with your partner directly — only your combined net is settled.
+            </p>
+            <Button variant="destructive" size="sm" onClick={handleUnregister}>
+              Unregister
+            </Button>
+          </div>
+        ) : (
+          <form onSubmit={handleRegisterCouple} className="space-y-3">
+            <p className="text-sm text-slate-500">
+              Register with a partner to combine your net balances in groups that have couple mode on.
+            </p>
+            <Input
+              value={partnerInput}
+              onChange={(e) => setPartnerInput(e.target.value)}
+              placeholder="Partner's name or user ID"
+            />
+            <div className="flex gap-2">
+              <Button type="submit">
+                Register as Couple
+              </Button>
+            </div>
+          </form>
+        )}
+        {coupleMsg && <p className="text-sm text-green-600 mt-3">{coupleMsg}</p>}
+        {coupleErr && <p className="text-sm text-rose-600 mt-3">{coupleErr}</p>}
       </Card>
 
       {/* Export / Import data */}

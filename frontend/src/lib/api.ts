@@ -1,5 +1,5 @@
-import { store, type StoreState } from './store'
-import { calculateBalances, simplifyDebts, computeAnalytics, CATEGORIES, type BalanceEntry, type Expense, type Settlement, type Transaction, type PaymentHandles, type Comment, type ActivityItem, type AnalyticsSummary, type CategorySpend, type MonthlySpend } from './engine'
+import { store, type StoreState, type CoupleRecord } from './store'
+import { calculateBalances, simplifyDebts, netCoupleBalances, computeAnalytics, CATEGORIES, type BalanceEntry, type Expense, type Settlement, type Transaction, type PaymentHandles, type Comment, type ActivityItem, type AnalyticsSummary, type CategorySpend, type MonthlySpend, type CoupleNettingConfig } from './engine'
 import { getLocalUser } from './identity'
 import { syncClient } from './sync'
 import { buildActivityFeed } from './feed'
@@ -95,7 +95,7 @@ export function createGroup(name: string, description: string, memberNames: stri
   const balances = calculateBalances(expenses, settlements, members)
   const userBalance = balances.find((b) => b.user_id === user.id)?.balance ?? 0
 
-  syncClient.enqueue('create_group', { id: group.id, uuid: group.uuid, name, description, member_ids: allMemberIds })
+  syncClient.enqueue('create_group', { id: group.id, uuid: group.uuid, name, description, member_ids: allMemberIds, couple_mode: group.couple_mode })
 
   return {
     id: group.id,
@@ -121,6 +121,51 @@ export function getGroupBalances(id: number): { balances: BalanceEntry[] } {
 
 export function getGroupMembers(id: number): MemberRecord[] {
   return store.getGroupMembers(id)
+}
+
+/* ─── Couples (F9) ─── */
+
+/** Register the current pair as a couple. Persists locally and syncs as a CRDT op. */
+export function registerCouple(userAId: string, userBId: string): CoupleRecord {
+  const couple = store.registerCouple(userAId, userBId)
+  syncClient.enqueue('register_couple', {
+    user_a: userAId,
+    user_b: userBId,
+    couple_id: couple.id,
+    uuid: couple.uuid,
+  })
+  return couple
+}
+
+/** Return the couple a user is registered in, if any. */
+export function getCoupleForUser(userId: string): CoupleRecord | undefined {
+  return store.getCoupleForUser(userId)
+}
+
+/** Enable/disable couple mode for a group and sync the toggle as an update_group op. */
+export function setGroupCoupleMode(groupId: number, enabled: boolean): void {
+  store.setGroupCoupleMode(groupId, enabled)
+  syncClient.enqueue('update_group', { group_id: groupId, couple_mode: enabled }, groupId)
+}
+
+/** Whether couple mode is enabled for a group (absent flag = OFF). */
+export function getGroupCoupleMode(groupId: number): boolean {
+  return store.getGroupCoupleMode(groupId)
+}
+
+/** All known users as (id, name) pairs — used to resolve a partner by name/id. */
+export function getUsers(): { id: string; name: string }[] {
+  return store.getUsers().map((u) => ({ id: u.id, name: u.name }))
+}
+
+/** Look up a user's display name by id (empty string if unknown). */
+export function getUserName(userId: string): string {
+  return store.getUser(userId)?.name ?? ''
+}
+
+/** Remove a couple relationship by its numeric id. Local-only for now. */
+export function unregisterCouple(coupleId: number): void {
+  store.removeCouple(coupleId)
 }
 
 /* ─── Expenses ─── */
@@ -297,11 +342,21 @@ export function getUserPaymentHandles(userId: string): PaymentHandles | null {
 
 /* ─── Suggested settlements ─── */
 
-export function getSuggestedSettlements(groupId: number): Transaction[] {
+export function getSuggestedSettlements(groupId: number, netting?: CoupleNettingConfig): Transaction[] {
   const members = store.getGroupMembers(groupId)
   const expenses = store.getGroupExpenses(groupId)
   const settlements = store.getGroupSettlements(groupId)
-  const balances = calculateBalances(expenses, settlements, members)
+  let balances = calculateBalances(expenses, settlements, members)
+  // Default the netting config from the store so plain `getSuggestedSettlements(groupId)`
+  // reflects the group's couples and couple-mode toggle; an explicit `netting`
+  // arg (e.g. a UI override) takes precedence.
+  const config: CoupleNettingConfig = netting ?? {
+    couples: store.getCouplesInGroup(groupId),
+    enabled: store.getGroupCoupleMode(groupId),
+  }
+  if (config.enabled && config.couples.length > 0) {
+    balances = netCoupleBalances(balances, config.couples, true)
+  }
   return simplifyDebts(balances)
 }
 
@@ -452,6 +507,7 @@ function enqueueImported(data: StoreState, baseline: ImportBaseline): void {
       name: mg.name,
       description: mg.description,
       member_ids: membersByGroup.get(mg.id) ?? [],
+      couple_mode: mg.couple_mode,
     })
   }
   for (const e of data.expenses) {
