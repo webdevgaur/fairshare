@@ -11,6 +11,9 @@ import {
   getCurrentUserId,
   getSuggestedSettlements,
   getUserPaymentHandles,
+  getCoupleForUser,
+  getGroupCoupleMode,
+  setGroupCoupleMode,
   CATEGORIES,
 } from '../lib/api'
 import type { BalanceEntry, Transaction } from '../lib/api'
@@ -55,6 +58,27 @@ function ChevronDown({ className }: { className?: string }) {
   )
 }
 
+/** shadcn/ui Switch-style toggle (single element, accessible via role="switch"). */
+function Switch({ toggled, onChange }: { toggled: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={toggled}
+      aria-label="Couple mode"
+      data-testid="couple-mode-toggle"
+      onClick={() => onChange(!toggled)}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 ${
+        toggled ? 'bg-slate-900' : 'bg-slate-200'
+      }`}
+    >
+      <span
+        className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${toggled ? 'translate-x-5' : 'translate-x-0.5'}`}
+      />
+    </button>
+  )
+}
+
 export default function GroupPage() {
   const { id } = useParams<{ id: string }>()
   const groupId = Number(id)
@@ -82,6 +106,10 @@ export default function GroupPage() {
   const [settleProvider, setSettleProvider] = useState<PaymentProvider>('venmo')
   const [suggestedTxns, setSuggestedTxns] = useState<Transaction[]>([])
 
+  // Couple mode (F9)
+  const [showCoupleToggle, setShowCoupleToggle] = useState(false)
+  const [coupleMode, setCoupleMode] = useState(false)
+
   // Receipt scan flow (F1)
   const [scanStage, setScanStage] = useState<'idle' | 'capture' | 'review'>('idle')
   const [scanImage, setScanImage] = useState<Blob | null>(null)
@@ -97,6 +125,20 @@ export default function GroupPage() {
     setGroup(g)
     setMembers(m)
     setBalances(b.balances)
+
+    // Couple-mode toggle availability (F9): only offered when the current
+    // user is registered in a couple AND their partner is a member here.
+    const me = currentUserId
+    const couple = me ? getCoupleForUser(me) : undefined
+    if (couple && me) {
+      const partnerId = couple.user_a === me ? couple.user_b : couple.user_a
+      const partnerInGroup = m.some((mem) => mem.id === partnerId)
+      setShowCoupleToggle(partnerInGroup)
+      if (partnerInGroup) setCoupleMode(getGroupCoupleMode(groupId))
+    } else {
+      setShowCoupleToggle(false)
+    }
+
     setLoading(false)
   }
 
@@ -199,6 +241,13 @@ export default function GroupPage() {
     }
   }
 
+  function handleToggleCoupleMode(enabled: boolean) {
+    setGroupCoupleMode(groupId, enabled)
+    setCoupleMode(enabled)
+    // Refresh any already-shown suggestions to reflect the new netting.
+    if (suggestedTxns.length > 0) setSuggestedTxns(getSuggestedSettlements(groupId))
+  }
+
   function handleScan(image: Blob, result: OcrResult) {
     const parsed = parseReceipt(result)
     setScanImage(image)
@@ -288,6 +337,19 @@ export default function GroupPage() {
             ? `You're owed ${formatCurrency(myBalance)} overall`
             : `You owe ${formatCurrency(Math.abs(myBalance))} overall`}
         </div>
+      )}
+
+      {/* Couple mode toggle (F9) */}
+      {showCoupleToggle && (
+        <Card className="mb-4 px-4 py-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-xs uppercase tracking-wider font-medium text-slate-400">Couple mode</h2>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Combine settlements with your partner in this group.
+            </p>
+          </div>
+          <Switch toggled={coupleMode} onChange={handleToggleCoupleMode} />
+        </Card>
       )}
 
       {/* Collapsible balances accordion */}

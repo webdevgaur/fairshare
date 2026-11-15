@@ -24,6 +24,23 @@ export interface GroupRecord {
   name: string
   description: string | null
   created_at: string
+  /** Per-group "Couple mode" toggle (F9). Optional for backward-compat; absent = OFF. */
+  couple_mode?: boolean
+}
+
+/**
+ * A registered couple relationship (F9). `user_a` / `user_b` are the two
+ * partners' stable user ids and must be distinct. Netting treats the pair as
+ * one unit only in the settlement-suggestion path; their individual balances
+ * remain unchanged.
+ */
+export interface CoupleRecord {
+  id: number
+  /** Globally-unique stable identifier shared across devices. */
+  uuid: string
+  user_a: string
+  user_b: string
+  created_at: string
 }
 
 export interface GroupMemberRecord {
@@ -85,11 +102,13 @@ export interface StoreState {
   expenseSplits: ExpenseSplitRecord[]
   settlements: SettlementRecord[]
   comments: CommentRecord[]
+  couples: CoupleRecord[]
   nextGroupId: number
   nextExpenseId: number
   nextSettlementId: number
   nextSplitId: number
   nextCommentId: number
+  nextCoupleId: number
 }
 
 /* ─── Public store class ─── */
@@ -134,6 +153,8 @@ export class LocalStore {
     if (!Array.isArray(state.settlements)) state.settlements = []
     if (!Array.isArray(state.comments)) state.comments = []
     if (!state.nextCommentId) state.nextCommentId = 1
+    if (!Array.isArray(state.couples)) state.couples = []
+    if (!state.nextCoupleId) state.nextCoupleId = 1
 
     for (const exp of state.expenses) {
       if (!exp.uuid) exp.uuid = crypto.randomUUID()
@@ -149,6 +170,9 @@ export class LocalStore {
       if (!s.created_at) {
         s.created_at = s.date ? `${s.date}T00:00:00.000Z` : new Date().toISOString()
       }
+    }
+    for (const c of state.couples) {
+      if (!c.uuid) c.uuid = crypto.randomUUID()
     }
     this.ensureLocalUserKeys(state)
     return state
@@ -183,11 +207,13 @@ export class LocalStore {
       expenseSplits: [],
       settlements: [],
       comments: [],
+      couples: [],
       nextGroupId: 1,
       nextExpenseId: 1,
       nextSettlementId: 1,
       nextSplitId: 1,
       nextCommentId: 1,
+      nextCoupleId: 1,
     }
   }
 
@@ -494,6 +520,74 @@ export class LocalStore {
       .map((c) => ({ ...c }))
   }
 
+  /* ─── Couples (F9) ─── */
+
+  /**
+   * Register a couple relationship between two distinct, existing users.
+   * Throws if either id is missing, they are the same, or either user is
+   * already in a couple. Returns the persisted CoupleRecord.
+   */
+  registerCouple(userA: string, userB: string): CoupleRecord {
+    if (!userA || !userB) throw new Error('Both users are required to register a couple.')
+    if (userA === userB) throw new Error('A user cannot be registered as their own couple.')
+    if (!this.getUser(userA) || !this.getUser(userB)) {
+      throw new Error('Both users must exist to register a couple.')
+    }
+    const already = this.state.couples.find(
+      (c) => c.user_a === userA || c.user_b === userA || c.user_a === userB || c.user_b === userB,
+    )
+    if (already) throw new Error('One of these users is already registered in a couple.')
+    const couple: CoupleRecord = {
+      id: this.state.nextCoupleId++,
+      uuid: crypto.randomUUID(),
+      user_a: userA,
+      user_b: userB,
+      created_at: new Date().toISOString(),
+    }
+    this.state.couples.push(couple)
+    this.save()
+    return { ...couple }
+  }
+
+  /** Return the couple a user is in, if any. */
+  getCoupleForUser(userId: string): CoupleRecord | undefined {
+    return this.state.couples.find((c) => c.user_a === userId || c.user_b === userId)
+  }
+
+  /** Return a couple by its numeric id, if present. */
+  getCoupleById(id: number): CoupleRecord | undefined {
+    return this.state.couples.find((c) => c.id === id)
+  }
+
+  /** Remove a couple relationship by id. No-op if it does not exist. */
+  removeCouple(id: number): void {
+    const idx = this.state.couples.findIndex((c) => c.id === id)
+    if (idx === -1) return
+    this.state.couples.splice(idx, 1)
+    this.save()
+  }
+
+  /** Whether couple mode is enabled for a group (absent flag = OFF). */
+  getGroupCoupleMode(groupId: number): boolean {
+    return this.getGroup(groupId)?.couple_mode ?? false
+  }
+
+  /** Enable/disable couple mode for a group. No-op if the group does not exist. */
+  setGroupCoupleMode(groupId: number, enabled: boolean): void {
+    const g = this.getGroup(groupId)
+    if (!g) return
+    g.couple_mode = enabled
+    this.save()
+  }
+
+  /** Couples whose both members are members of the given group. */
+  getCouplesInGroup(groupId: number): CoupleRecord[] {
+    const memberIds = new Set(
+      this.state.groupMembers.filter((gm) => gm.group_id === groupId).map((gm) => gm.user_id),
+    )
+    return this.state.couples.filter((c) => memberIds.has(c.user_a) && memberIds.has(c.user_b))
+  }
+
   /* ─── Raw data export for sync ─── */
 
   getAllData(): StoreState {
@@ -532,6 +626,7 @@ export class LocalStore {
     for (const g of state.groups) if (!g.uuid) g.uuid = crypto.randomUUID()
     for (const e of state.expenses) if (!e.uuid) e.uuid = crypto.randomUUID()
     for (const s of state.settlements) if (!s.uuid) s.uuid = crypto.randomUUID()
+    for (const c of state.couples ?? []) if (!c.uuid) c.uuid = crypto.randomUUID()
   }
 
   /**
@@ -548,6 +643,7 @@ export class LocalStore {
     next.expenseSplits = Array.isArray(next.expenseSplits) ? next.expenseSplits : []
     next.settlements = Array.isArray(next.settlements) ? next.settlements : []
     next.comments = Array.isArray(next.comments) ? next.comments : []
+    next.couples = Array.isArray(next.couples) ? next.couples : []
     this.ensureUuids(next)
     this.fixCommentExpenseIds(next)
     return this.recomputeCounters(next)
@@ -569,6 +665,7 @@ export class LocalStore {
     state.nextSettlementId = maxId(state.settlements) + 1
     state.nextSplitId = maxId(state.expenseSplits) + 1
     state.nextCommentId = maxId(state.comments) + 1
+    state.nextCoupleId = maxId(state.couples ?? []) + 1
     return state
   }
 
@@ -587,6 +684,7 @@ export class LocalStore {
     const nextSplits: ExpenseSplitRecord[] = [...cur.expenseSplits]
     const nextSettlements: SettlementRecord[] = [...cur.settlements]
     const nextComments: CommentRecord[] = [...cur.comments]
+    const nextCouples: CoupleRecord[] = [...(cur.couples ?? [])]
 
     // Maps from the *imported* numeric id to the imported uuid (join keys)
     const importedGroupIdToUuid = new Map<number, string>()
@@ -703,6 +801,24 @@ export class LocalStore {
       }
     }
 
+    // Couples: upsert by uuid (idempotent — no duplicate creation on re-import)
+    for (const ic of imported.couples ?? []) {
+      const existing = nextCouples.find((c) => c.uuid === ic.uuid)
+      if (existing) {
+        existing.user_a = ic.user_a
+        existing.user_b = ic.user_b
+        existing.created_at = ic.created_at
+      } else {
+        nextCouples.push({
+          id: nextIdFrom(nextCouples),
+          uuid: ic.uuid,
+          user_a: ic.user_a,
+          user_b: ic.user_b,
+          created_at: ic.created_at,
+        })
+      }
+    }
+
     // Comments: dedupe on stable (expense_uuid + author + text + created_at);
     // re-derive expense_id from expense_uuid and remap group_id via uuid.
     for (const ic of imported.comments) {
@@ -733,11 +849,13 @@ export class LocalStore {
       expenseSplits: nextSplits,
       settlements: nextSettlements,
       comments: nextComments,
+      couples: nextCouples,
       nextGroupId: 1,
       nextExpenseId: 1,
       nextSettlementId: 1,
       nextSplitId: 1,
       nextCommentId: 1,
+      nextCoupleId: 1,
     })
   }
 }

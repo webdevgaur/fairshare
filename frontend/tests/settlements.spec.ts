@@ -50,4 +50,36 @@ test.describe('Settlements', () => {
     await expect(page.getByText('Alice').first()).toBeVisible()
     await expect(page.getByText('Bob').first()).toBeVisible()
   })
+
+  test('couple mode does not change existing settlement arithmetic', async ({ page }) => {
+    await seedIdentity(page, 'Alice')
+    const groupId = await seedGroup(page, 'Household', '', ['Bob'])
+    // Alice pays $100, split equally → Bob owes $50
+    await seedExpense(page, groupId, 'Groceries', 100)
+    // Bob settles his $50 debt → a settlement entry appears in the feed.
+    await seedSettlement(page, groupId, 50)
+    // Seed a couple (Alice + Bob) but leave couple mode OFF — settlement
+    // suggestions / arithmetic must be identical to having no couple at all.
+    await page.evaluate(() => {
+      const raw = localStorage.getItem('fairshare_store')
+      const state = JSON.parse(raw)
+      const identity = JSON.parse(localStorage.getItem('fairshare_identity')!)
+      const bob = state.users.find((u: any) => u.name === 'Bob')
+      if (!Array.isArray(state.couples)) state.couples = []
+      if (!state.nextCoupleId) state.nextCoupleId = 1
+      state.couples.push({
+        id: state.nextCoupleId++,
+        uuid: crypto.randomUUID(),
+        user_a: identity.id,
+        user_b: bob.id,
+        created_at: new Date().toISOString(),
+      })
+      localStorage.setItem('fairshare_store', JSON.stringify(state))
+    })
+    await gotoApp(page, `/groups/${groupId}`)
+
+    // Same settlement text and amount as the seeded-data test above.
+    await expect(page.getByText('paid')).toBeVisible()
+    await expect(page.getByText('$50.00').first()).toBeVisible()
+  })
 })

@@ -1,3 +1,5 @@
+import type { CoupleRecord } from './store'
+
 export interface Member {
   id: string
   name: string
@@ -93,6 +95,17 @@ export interface Transaction {
   amount: number
 }
 
+/**
+ * Optional F9 couple-netting configuration threaded into the settlement
+ * suggestion path. When `enabled`, `netCoupleBalances` folds each registered
+ * couple present in the group into a single net position before simplification.
+ * Absent config = no netting (backward compatible).
+ */
+export interface CoupleNettingConfig {
+  couples: CoupleRecord[]
+  enabled: boolean
+}
+
 /* ─── Unified activity feed ─── */
 
 /** An expense line in the unified activity feed. */
@@ -149,12 +162,22 @@ export type ActivityItem =
  * settles everyone. Each iteration pairs the largest creditor with the largest
  * debtor and transfers the smaller amount, then removes anyone who is settled
  * (within a 0.005 rounding tolerance).
+ *
+ * When an F9 `CoupleNettingConfig` is supplied with `enabled: true`, couples
+ * present in the group are folded into a single net position before
+ * simplification (`netCoupleBalances`), and a defensive filter drops any
+ * residual transaction directly between the two partners so no A→B edge is ever
+ * emitted (AC #5). Absent config = unchanged behaviour (backward compatible).
  */
-export function simplifyDebts(balances: BalanceEntry[]): Transaction[] {
-  const creditors = balances
+export function simplifyDebts(balances: BalanceEntry[], config?: CoupleNettingConfig): Transaction[] {
+  const working = config && config.enabled && config.couples.length > 0
+    ? netCoupleBalances(balances, config.couples, true)
+    : balances
+
+  const creditors = working
     .filter((b) => b.balance > 0)
     .map((b) => ({ user_id: b.user_id, user_name: b.user_name, amount: b.balance }))
-  const debtors = balances
+  const debtors = working
     .filter((b) => b.balance < 0)
     .map((b) => ({ user_id: b.user_id, user_name: b.user_name, amount: -b.balance }))
 
@@ -192,7 +215,24 @@ export function simplifyDebts(balances: BalanceEntry[]): Transaction[] {
     if (creditor.amount < 0.005) creditors.splice(ci, 1)
   }
 
+  // Defensive F9 guard: never settle directly between the partners of a
+  // registered couple, regardless of the greedy pairing. Couples are normally
+  // folded into a single pseudo-member above, so this rarely fires, but it
+  // guarantees AC #5 even if only part of a couple is present in the balances.
+  if (config && config.enabled) {
+    const partnerPairs = new Set<string>()
+    for (const c of config.couples) {
+      partnerPairs.add(pairKey(c.user_a, c.user_b))
+    }
+    return transactions.filter((t) => !partnerPairs.has(pairKey(t.from_user, t.to_user)))
+  }
+
   return transactions
+}
+
+/** Canonical unordered key for a pair of user ids. */
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
 /**
@@ -239,6 +279,36 @@ export function calculateBalances(
     user_name: m.name,
     balance: Math.round((balances[m.id] || 0) * 100) / 100,
   }))
+}
+
+/**
+ * F9 couple netting: fold each registered couple present in `balances` into a
+ * single net position keyed by `user_a`, and zero out `user_b`, so the pair has
+ * exactly one entry in the simplification output (never an A↔B transaction).
+ *
+ * This is a *post-processing* step over `calculateBalances` output — it leaves
+ * each member's individual balance on the balance sheet untouched (only the
+ * settlement-suggestion path consumes the netted view). When disabled (or no
+ * couples are given) the input is returned unchanged.
+ */
+export function netCoupleBalances(
+  balances: BalanceEntry[],
+  couples: CoupleRecord[],
+  enabled: boolean,
+): BalanceEntry[] {
+  if (!enabled || couples.length === 0) return balances
+
+  const result = balances.map((b) => ({ ...b }))
+
+  for (const couple of couples) {
+    const a = result.find((b) => b.user_id === couple.user_a)
+    const b = result.find((b) => b.user_id === couple.user_b)
+    if (!a || !b) continue // both members must be present in the group balances
+    a.balance = round2(a.balance + b.balance)
+    b.balance = 0
+  }
+
+  return result
 }
 
 /* ─── Spending Insights & Analytics (F3) ─── */

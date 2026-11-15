@@ -19,4 +19,5 @@ frontend/.env
 # Test artifacts
 frontend/test-results/
 frontend/playwright-report/
-frontend/tests/test-results/
+frontend/tests/test-results/frontend/IMPLEMENTATION_REPORT.json
+frontend/TEST_REPORT.json
