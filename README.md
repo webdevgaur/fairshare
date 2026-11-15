@@ -24,9 +24,10 @@ Built with [agency-agents](https://github.com/msitarzewski/agency-agents) specia
 | **F5** — Export / Import | ✅ Done | JSON round-trip (merge-by-uuid), CSV export, Splitwise CSV import, formula-injection protection. |
 | **F3** — Spending Insights & Analytics | ✅ Done | Category breakdown, monthly spending, this-month / last-month / all-time cards, hand-built charts, on-read computation. |
 || **F1** — Receipt Scanning & OCR | ✅ Done | On-device Tesseract.js v5 (WASM, lazy-loaded on first scan); heuristic parser extracts merchant / date / total / line items; receipt image stored in IndexedDB (never leaves device); review-and-assign grid before batch-creating expenses; falls back to manual entry if OCR fails. |
-|| **F9** — Couple Mode | ✅ Done (v0.5.0) | Mutual couple registration (Profile.tsx); per-group toggle (GroupPage.tsx); netted settlement suggestions (intra-couple debt combined); expenses still split by all N members. |
+||| **F9** — Couple Mode | ✅ Done (v0.5.0) | Mutual couple registration (Profile.tsx); per-group toggle (GroupPage.tsx); netted settlement suggestions (intra-couple debt combined); expenses still split by all N members. |
+||| **F8** — Group Member Invite | ✅ Done (v0.6.0) | Identity QR on Profile, QR scanner for scanning friend's code; share-link invite with deep-link handler (`?invite=<token>`); Pending → Accept/Decline workflow; 3 new CRDT ops. |
 
-**Roadmap:** the PRD ([`../PRD_FairShare.md`](../PRD_FairShare.md)) defines core features (F1–F7 plus F9). **F2** (Recurring Expenses) and **F7** (Multi-Currency Travel Mode) remain unbuilt.
+**Roadmap:** the PRD ([`../PRD_FairShare.md`](../PRD_FairShare.md)) defines core features (F1–F9). **F2** (Recurring Expenses) and **F7** (Multi-Currency Travel Mode) remain unbuilt.
 
 ---
 
@@ -139,7 +140,7 @@ On first visit you'll be prompted for a name; this seeds the local identity. The
 ```bash
 cd frontend
 npm run dev &                   # keep the dev server running
-npx playwright test             # 80 E2E tests across 14 spec files
+npx playwright test             # 91 E2E tests across 15 spec files
 ```
 
 ---

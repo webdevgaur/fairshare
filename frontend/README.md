@@ -61,12 +61,13 @@ npm run preview          # serve the production build
 | **F3** — Spending Insights & Analytics | ✅ | [`src/lib/engine.ts`](src/lib/engine.ts) `computeAnalytics` + the `SpendingInsights` section in [`src/pages/Dashboard.tsx`](src/pages/Dashboard.tsx) (hand-built donut + bar charts) |
 || **F1** — Receipt Scanning & OCR | ✅ | [`src/lib/ocr.ts`](src/lib/ocr.ts) lazy-loaded Tesseract.js v5 (WASM), [`src/lib/receipt-parser.ts`](src/lib/receipt-parser.ts) heuristic parser, [`src/lib/receipt-store.ts`](src/lib/receipt-store.ts) IndexedDB image store, [`src/components/ReceiptScanner.tsx`](src/components/ReceiptScanner.tsx) + [`src/components/ReceiptReview.tsx`](src/components/ReceiptReview.tsx), [`src/lib/api.ts`](src/lib/api.ts) `createExpenseFromScan` |
 || **F9** — Couple Mode | ✅ (v0.5.0) | Mutual couple registration ([`src/pages/Profile.tsx`](src/pages/Profile.tsx)); per-group toggle ([`src/pages/GroupPage.tsx`](src/pages/GroupPage.tsx)); netted settlement suggestions (`src/lib/engine.ts`); expenses split by all N members |
+|| **F8** — Group Member Invite | ✅ (v0.6.0) | [`src/components/qr-code.tsx`](src/components/qr-code.tsx), [`src/components/qr-scanner.tsx`](src/components/qr-scanner.tsx), [`src/lib/invites.ts`](src/lib/invites.ts) — Identity QR on Profile, share-link deep-link handler, Pending → Accept/Decline workflow |
 
 ---
 
 ## Test Suite
 
-The suite is **Playwright end-to-end** against the dev server (`http://localhost:5173`). It has **80 tests across 14 spec files** and no unit tests — the logic is exercised through the browser UI and via seeded `localStorage`.
+The suite is **Playwright end-to-end** against the dev server (`http://localhost:5173`). It has **91 tests across 15 spec files** and no unit tests — the logic is exercised through the browser UI and via seeded `localStorage`.
 
 ### Run the whole suite
 
@@ -100,8 +101,9 @@ npx playwright test --grep "F3"       # by test-name substring
 | `tests/analytics.spec.ts` | 4 | Spending insights, category breakdown |
 | `tests/receipt-scan.spec.ts` | 4 | Scan → OCR-extracted line items, uuid + no-image sync payload, IndexedDB storage, manual-entry fallback |
 || `tests/sync.spec.ts` | 3 | CRDT sync, offline queue |
-|| `tests/couple-mode.spec.ts` | 11 | Couple registration, per-group toggle, netted settlements |
-|| **Total** | **80** | |
+||| `tests/couple-mode.spec.ts` | 11 | Couple registration, per-group toggle, netted settlements |
+||| `tests/invites.spec.ts` | 11 | QR code generation, QR scanner, share-link invite, Pending → Accept/Decline workflow |
+||| **Total** | **91** | |
 
 ### Helpers in `tests/setup.ts`
 
