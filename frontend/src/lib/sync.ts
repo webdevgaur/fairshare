@@ -792,6 +792,8 @@ class SyncClient {
           actor_name: d.actor_name,
           entity_uuid: d.entity_uuid,
           payload: d.payload,
+          uuid: d.uuid,
+          created_at: d.created_at,
         })
         break
       }

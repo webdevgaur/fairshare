@@ -117,6 +117,9 @@ test.describe('CRDT Ops - create_activity', () => {
       const api: any = await import('/src/lib/api.ts')
       return api.getGroupActivityLog(groupId)
     }, { groupId })
-    expect(afterSecond.length).toBe(afterFirst.length + 1)
+    expect(afterSecond.length).toBe(afterFirst.length)
+    // Verify the last entry still matches (not a duplicate)
+    const lastAfter = afterSecond[afterSecond.length - 1]
+    expect(lastAfter.uuid).toBe(lastEntry.uuid)
   })
 })

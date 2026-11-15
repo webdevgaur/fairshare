@@ -797,10 +797,10 @@ export class LocalStore {
    * `created_at` timestamp; pushes to the store and persists. Returns the
    * complete entry.
    */
-  logActivity(entry: Omit<ActivityLogEntry, 'id' | 'uuid' | 'created_at'>): ActivityLogEntry {
+  logActivity(entry: Omit<ActivityLogEntry, 'id' | 'uuid' | 'created_at'> & { uuid?: string; created_at?: string }): ActivityLogEntry {
     const id = this.state.nextActivityId++
-    const uuid = crypto.randomUUID()
-    const created_at = new Date().toISOString()
+    const uuid = entry.uuid ?? crypto.randomUUID()
+    const created_at = entry.created_at ?? new Date().toISOString()
     const record: ActivityLogEntry = {
       id,
       uuid,
