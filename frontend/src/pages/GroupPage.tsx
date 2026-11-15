@@ -15,9 +15,15 @@ import {
   getGroupCoupleMode,
   setGroupCoupleMode,
   CATEGORIES,
+  createInviteForGroup,
+  getPendingInvitesForGroup,
+  acceptInvite,
+  declineInvite,
 } from '../lib/api'
-import type { BalanceEntry, Transaction } from '../lib/api'
+import type { BalanceEntry, Transaction, PendingInviteRecord } from '../lib/api'
 import { buildPaymentLink, type PaymentProvider } from '../lib/paymentLinks'
+import { encodeInviteQR, buildInviteLink } from '../lib/invites'
+import QrCode from '@/components/qr-code'
 import ActivityFeed from '@/components/ActivityFeed'
 import ReceiptScanner from '@/components/ReceiptScanner'
 import ReceiptReview from '@/components/ReceiptReview'
@@ -110,6 +116,12 @@ export default function GroupPage() {
   const [showCoupleToggle, setShowCoupleToggle] = useState(false)
   const [coupleMode, setCoupleMode] = useState(false)
 
+  // Invite (F8)
+  const [showInvite, setShowInvite] = useState(false)
+  const [inviteToken, setInviteToken] = useState('')
+  const [pendingInvites, setPendingInvites] = useState<PendingInviteRecord[]>([])
+  const [inviteCopied, setInviteCopied] = useState(false)
+
   // Receipt scan flow (F1)
   const [scanStage, setScanStage] = useState<'idle' | 'capture' | 'review'>('idle')
   const [scanImage, setScanImage] = useState<Blob | null>(null)
@@ -140,6 +152,11 @@ export default function GroupPage() {
     }
 
     setLoading(false)
+    loadInvites()
+  }
+
+  function loadInvites() {
+    setPendingInvites(getPendingInvitesForGroup(groupId))
   }
 
   useEffect(() => {
@@ -248,6 +265,41 @@ export default function GroupPage() {
     if (suggestedTxns.length > 0) setSuggestedTxns(getSuggestedSettlements(groupId))
   }
 
+  function handleShowInvite() {
+    // Generate a fresh invite token for this group
+    const token = crypto.randomUUID()
+    setInviteToken(token)
+    // Create an open invite (no specific invitee) so there's a record for the link
+    createInviteForGroup(groupId)
+    loadInvites()
+    setShowInvite(true)
+  }
+
+  function handleCopyInviteLink() {
+    if (!inviteToken) return
+    const link = buildInviteLink(inviteToken)
+    navigator.clipboard.writeText(link).then(() => {
+      setInviteCopied(true)
+      setTimeout(() => setInviteCopied(false), 2000)
+    }).catch(() => {
+      // Fallback: select-all + copy guidance
+      setInviteCopied(true)
+    })
+  }
+
+  function handleAcceptInvite(inviteUuid: string) {
+    if (!currentUserId) return
+    acceptInvite(inviteUuid, currentUserId)
+    loadInvites()
+    // Reload group data to reflect new member
+    loadData()
+  }
+
+  function handleDeclineInvite(inviteUuid: string) {
+    declineInvite(inviteUuid)
+    loadInvites()
+  }
+
   function handleScan(image: Blob, result: OcrResult) {
     const parsed = parseReceipt(result)
     setScanImage(image)
@@ -337,6 +389,85 @@ export default function GroupPage() {
             ? `You're owed ${formatCurrency(myBalance)} overall`
             : `You owe ${formatCurrency(Math.abs(myBalance))} overall`}
         </div>
+      )}
+
+      {/* Invite member (F8) */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        <Button
+          variant="outline"
+          onClick={handleShowInvite}
+          data-testid="invite-member-button"
+        >
+          Invite Member
+        </Button>
+      </div>
+
+      {showInvite && (
+        <Card className="mb-4 p-4">
+          <h2 className="text-xs uppercase tracking-wider font-medium text-slate-400 mb-3">Invite Member</h2>
+
+          {/* Invite QR */}
+          {inviteToken && (
+            <div className="flex justify-center mb-3">
+              <QrCode data={encodeInviteQR(inviteToken)} size={180} />
+            </div>
+          )}
+
+          {/* Copy invite link */}
+          {inviteToken && (
+            <div className="flex gap-2 mt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopyInviteLink}
+                className="w-full"
+              >
+                {inviteCopied ? 'Copied!' : 'Copy invite link'}
+              </Button>
+            </div>
+          )}
+
+          {/* Pending invites list */}
+          {pendingInvites.length > 0 && (
+            <div className="mt-4 space-y-2">
+              <p className="text-xs font-medium text-slate-500">Pending invites</p>
+              {pendingInvites.map((inv) => (
+                <div
+                  key={inv.uuid}
+                  className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5"
+                >
+                  <div className="min-w-0 text-sm text-slate-700">
+                    <span className="font-medium">{inv.inviter_name}</span>
+                    <span className="text-slate-400">
+                      {' '}invited you —{' '}
+                      <span className={`font-medium capitalize ${
+                        inv.status === 'pending'
+                          ? 'text-amber-600'
+                          : inv.status === 'accepted'
+                            ? 'text-green-600'
+                            : 'text-rose-500'
+                      }`}>{inv.status}</span>
+                    </span>
+                  </div>
+                  {inv.status === 'pending' && inv.invitee_id === currentUserId && (
+                    <div className="flex gap-1.5 shrink-0">
+                      <Button size="sm" variant="outline" onClick={() => handleAcceptInvite(inv.uuid)}>
+                        Accept
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => handleDeclineInvite(inv.uuid)}>
+                        Decline
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <Button variant="ghost" size="sm" onClick={() => setShowInvite(false)} className="mt-3">
+            Close
+          </Button>
+        </Card>
       )}
 
       {/* Couple mode toggle (F9) */}

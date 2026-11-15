@@ -2,11 +2,22 @@ import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getLocalUser, setLocalUser, clearLocalUser, getPublicKeyHex } from '../lib/identity'
 import { fingerprint } from '../lib/crypto'
-import { getUserPaymentHandles, updatePaymentHandles, exportData, importJSON, importSplitwiseCSV, isSplitwiseImport, getCoupleForUser, registerCouple, unregisterCouple, getUserName, getUsers } from '../lib/api'
+import { getUserPaymentHandles, updatePaymentHandles, exportData, importJSON, importSplitwiseCSV, isSplitwiseImport, getCoupleForUser, registerCouple, unregisterCouple, getUserName, getUsers, createInviteForGroup, getGroups } from '../lib/api'
 import type { CoupleRecord } from '../lib/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
+import QrCode from '@/components/qr-code'
+import QrScanner from '@/components/qr-scanner'
+import { encodeIdentityQR } from '../lib/invites'
+import type { IdentityQrPayload } from '../lib/invites'
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select'
 
 /** Trigger a browser download of a string as a file. */
 function downloadText(filename: string, content: string, mime: string) {
@@ -39,6 +50,12 @@ export default function Profile() {
   const [partnerInput, setPartnerInput] = useState('')
   const [coupleMsg, setCoupleMsg] = useState('')
   const [coupleErr, setCoupleErr] = useState('')
+
+  // Invite / QR (F8)
+  const [showQrScanner, setShowQrScanner] = useState(false)
+  const [scannedIdentity, setScannedIdentity] = useState<IdentityQrPayload | null>(null)
+  const [selectedGroupId, setSelectedGroupId] = useState('')
+  const [inviteStatus, setInviteStatus] = useState('')
 
   // Export / import (F5)
   const [impStatus, setImpStatus] = useState('')
@@ -129,6 +146,28 @@ export default function Profile() {
     unregisterCouple(couple.id)
     setCouple(null)
     setCoupleMsg('Couple unregistered.')
+  }
+
+  function handleQrScanResult(decoded: { userId: string; name: string }) {
+    setScannedIdentity({ t: 'identity', id: decoded.userId, name: decoded.name, pubkey: '' })
+    setShowQrScanner(false)
+    setInviteStatus('')
+  }
+
+  function handleScanCancel() {
+    setShowQrScanner(false)
+  }
+
+  function handleInviteToGroup() {
+    if (!scannedIdentity || !selectedGroupId) return
+    createInviteForGroup(
+      Number(selectedGroupId),
+      scannedIdentity.id,
+      scannedIdentity.name,
+    )
+    setInviteStatus(`Invite sent to ${scannedIdentity.name}!`)
+    setScannedIdentity(null)
+    setSelectedGroupId('')
   }
 
   function handleReset() {
@@ -248,6 +287,61 @@ export default function Profile() {
         )}
         {coupleMsg && <p className="text-sm text-green-600 mt-3">{coupleMsg}</p>}
         {coupleErr && <p className="text-sm text-rose-600 mt-3">{coupleErr}</p>}
+      </Card>
+
+      {/* Invite / QR (F8) */}
+      <Card className="p-4">
+        <h2 className="text-xs uppercase tracking-wider font-medium text-slate-400 mb-3">Invite / QR</h2>
+
+        {/* Identity QR */}
+        <p className="text-xs text-slate-500 mb-3">
+          Scan this QR or share it with a friend so they can add you to a group.
+        </p>
+        <div className="flex justify-center mb-4">
+          <QrCode data={encodeIdentityQR(userId, name, pubKey)} size={200} />
+        </div>
+
+        {/* Scan a friend */}
+        <div className="mt-4 space-y-3">
+          <Button onClick={() => setShowQrScanner(true)}>
+            Scan a friend
+          </Button>
+
+          {showQrScanner && (
+            <QrScanner onScan={handleQrScanResult} onCancel={handleScanCancel} />
+          )}
+
+          {/* Scanned identity result */}
+          {scannedIdentity && (
+            <div className="rounded-lg border border-slate-200 p-3 space-y-2 bg-slate-50">
+              <p className="text-sm text-slate-700">
+                Scanned: <span className="font-medium">{scannedIdentity.name}</span>
+              </p>
+              <Select value={selectedGroupId} onValueChange={(v) => setSelectedGroupId(v ?? '')}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a group…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getGroups().map((g) => (
+                    <SelectItem key={String(g.id)} value={String(g.id)}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={handleInviteToGroup}
+                disabled={!selectedGroupId}
+              >
+                Invite to Group
+              </Button>
+            </div>
+          )}
+
+          {inviteStatus && (
+            <p className="text-sm text-slate-600 mt-2">{inviteStatus}</p>
+          )}
+        </div>
       </Card>
 
       {/* Export / Import data */}

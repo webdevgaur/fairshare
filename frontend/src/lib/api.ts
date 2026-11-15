@@ -1,4 +1,4 @@
-import { store, type StoreState, type CoupleRecord } from './store'
+import { store, type StoreState, type CoupleRecord, type PendingInviteRecord } from './store'
 import { calculateBalances, simplifyDebts, netCoupleBalances, computeAnalytics, CATEGORIES, type BalanceEntry, type Expense, type Settlement, type Transaction, type PaymentHandles, type Comment, type ActivityItem, type AnalyticsSummary, type CategorySpend, type MonthlySpend, type CoupleNettingConfig } from './engine'
 import { getLocalUser } from './identity'
 import { syncClient } from './sync'
@@ -8,7 +8,7 @@ import type { ParsedLineItem } from './receipt-parser'
 
 /* ─── Re-export types ─── */
 
-export type { BalanceEntry, Expense, Settlement, Transaction, PaymentHandles, Comment, ActivityItem, AnalyticsSummary, CategorySpend, MonthlySpend }
+export type { BalanceEntry, Expense, Settlement, Transaction, PaymentHandles, Comment, ActivityItem, AnalyticsSummary, CategorySpend, MonthlySpend, PendingInviteRecord }
 export { CATEGORIES } from './engine'
 export type { Member } from './engine'
 
@@ -557,4 +557,85 @@ function enqueueImported(data: StoreState, baseline: ImportBaseline): void {
       text: mc.text,
     })
   }
+}
+
+/* ─── Invites (F8) ─── */
+
+/**
+ * Create a pending invite for a group and enqueue a create_invite CRDT op.
+ * If inviteeId is provided (QR-invite path), the invite is tied to a specific
+ * user; otherwise it is a share-link invite identified by token alone.
+ */
+export function createInviteForGroup(
+  groupId: number,
+  inviteeId?: string,
+  inviteeName?: string,
+): PendingInviteRecord {
+  const user = getLocalUser()
+  if (!user) throw new Error('No local user')
+
+  const record = store.createInvite(
+    groupId,
+    user.id,
+    user.name,
+    inviteeId,
+    inviteeName,
+  )
+
+  syncClient.enqueue('create_invite', {
+    group_id: groupId,
+    inviter_id: user.id,
+    inviter_name: user.name,
+    invitee_id: inviteeId,
+    invitee_name: inviteeName,
+    token: record.token,
+    uuid: record.uuid,
+  })
+
+  return record
+}
+
+/** Return all pending invites for a group (all statuses). */
+export function getPendingInvitesForGroup(groupId: number): PendingInviteRecord[] {
+  return store.getPendingInvitesForGroup(groupId)
+}
+
+/** Return all pending invites where the current user is the invitee. */
+export function getPendingInvitesForUser(userId: string): PendingInviteRecord[] {
+  return store.getPendingInvitesForUser(userId)
+}
+
+/**
+ * Accept a pending invite by its uuid, add the user to the group, and
+ * enqueue an accept_invite CRDT op.
+ */
+export function acceptInvite(inviteUuid: string, userId: string): void {
+  const invites = store.getPendingInvitesForUser(userId)
+  const invite = invites.find((i) => i.uuid === inviteUuid)
+  if (!invite) throw new Error('Invite not found')
+
+  store.acceptInvite(inviteUuid)
+  store.addGroupMember(invite.group_id, userId)
+
+  syncClient.enqueue('accept_invite', {
+    invite_uuid: inviteUuid,
+    group_id: invite.group_id,
+    invitee_id: userId,
+  })
+}
+
+/**
+ * Decline a pending invite by its uuid and enqueue a decline_invite CRDT op.
+ */
+export function declineInvite(inviteUuid: string): void {
+  store.declineInvite(inviteUuid)
+
+  syncClient.enqueue('decline_invite', {
+    invite_uuid: inviteUuid,
+  })
+}
+
+/** Look up an invite by its unique token. */
+export function getInviteByToken(token: string): PendingInviteRecord | undefined {
+  return store.getInviteByToken(token)
 }
