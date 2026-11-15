@@ -28,7 +28,7 @@ export interface CRDTOperation {
   /** Globally unique operation ID (nanoid-style) */
   op_id: string
   /** Operation type */
-  type: 'create_group' | 'create_expense' | 'create_settlement' | 'create_comment' | 'update_group' | 'update_profile' | 'register_couple' | 'unregister_couple' | 'remove_couple'
+  type: 'create_group' | 'create_expense' | 'create_settlement' | 'create_comment' | 'update_group' | 'update_profile' | 'register_couple' | 'unregister_couple' | 'remove_couple' | 'create_invite' | 'accept_invite' | 'decline_invite'
   /** Group this operation belongs to */
   group_id: string | number
   /** Lamport clock value at time of creation */
@@ -55,6 +55,9 @@ export type CRDTOperationData =
   | { user_id: string; handles: PaymentHandles }
   | { user_a: string; user_b: string; couple_id?: number; uuid?: string }
   | { couple_id?: number; uuid?: string }
+  | { group_id: number; inviter_id: string; inviter_name: string; invitee_id?: string; invitee_name?: string; token: string; uuid: string }
+  | { invite_uuid: string; group_id?: number; invitee_id?: string }
+  | { invite_uuid: string }
 
 interface QueuedOp {
   op: CRDTOperation
@@ -724,6 +727,47 @@ class SyncClient {
       case 'update_profile': {
         const d = op.data as { user_id: string; handles: PaymentHandles }
         store.setUserPaymentHandles(d.user_id, d.handles)
+        break
+      }
+
+      case 'create_invite': {
+        const d = op.data as {
+          group_id: number
+          inviter_id: string
+          inviter_name: string
+          invitee_id?: string
+          invitee_name?: string
+          token: string
+          uuid: string
+        }
+        // Idempotent: createInvite checks for existing pending invite
+        store.createInvite(
+          Number(d.group_id),
+          d.inviter_id,
+          d.inviter_name,
+          d.invitee_id,
+          d.invitee_name,
+          { token: d.token, uuid: d.uuid },
+        )
+        break
+      }
+
+      case 'accept_invite': {
+        const d = op.data as { invite_uuid: string; group_id?: number; invitee_id?: string }
+        if (d.invite_uuid) {
+          const accepted = store.acceptInvite(d.invite_uuid)
+          if (accepted && d.group_id !== undefined && d.invitee_id !== undefined) {
+            store.addGroupMember(Number(d.group_id), d.invitee_id)
+          }
+        }
+        break
+      }
+
+      case 'decline_invite': {
+        const d = op.data as { invite_uuid: string }
+        if (d.invite_uuid) {
+          store.declineInvite(d.invite_uuid)
+        }
         break
       }
     }

@@ -376,12 +376,14 @@ function emptyImportState(): StoreState {
     settlements: [],
     comments: [],
     couples: [],
+    pendingInvites: [],
     nextGroupId: 1,
     nextExpenseId: 1,
     nextSettlementId: 1,
     nextSplitId: 1,
     nextCommentId: 1,
     nextCoupleId: 1,
+    nextInviteId: 1,
   }
 }
 

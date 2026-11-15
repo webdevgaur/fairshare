@@ -43,6 +43,20 @@ export interface CoupleRecord {
   created_at: string
 }
 
+export interface PendingInviteRecord {
+  id: number
+  /** Globally-unique stable identifier shared across devices. */
+  uuid: string
+  group_id: number
+  inviter_id: string
+  inviter_name: string
+  invitee_id: string | null
+  invitee_name: string | null
+  token: string
+  status: 'pending' | 'accepted' | 'declined'
+  created_at: string
+}
+
 export interface GroupMemberRecord {
   group_id: number
   user_id: string
@@ -103,12 +117,14 @@ export interface StoreState {
   settlements: SettlementRecord[]
   comments: CommentRecord[]
   couples: CoupleRecord[]
+  pendingInvites: PendingInviteRecord[]
   nextGroupId: number
   nextExpenseId: number
   nextSettlementId: number
   nextSplitId: number
   nextCommentId: number
   nextCoupleId: number
+  nextInviteId: number
 }
 
 /* ─── Public store class ─── */
@@ -155,6 +171,8 @@ export class LocalStore {
     if (!state.nextCommentId) state.nextCommentId = 1
     if (!Array.isArray(state.couples)) state.couples = []
     if (!state.nextCoupleId) state.nextCoupleId = 1
+    if (!Array.isArray(state.pendingInvites)) state.pendingInvites = []
+    if (!state.nextInviteId) state.nextInviteId = 1
 
     for (const exp of state.expenses) {
       if (!exp.uuid) exp.uuid = crypto.randomUUID()
@@ -208,12 +226,14 @@ export class LocalStore {
       settlements: [],
       comments: [],
       couples: [],
+      pendingInvites: [],
       nextGroupId: 1,
       nextExpenseId: 1,
       nextSettlementId: 1,
       nextSplitId: 1,
       nextCommentId: 1,
       nextCoupleId: 1,
+      nextInviteId: 1,
     }
   }
 
@@ -588,6 +608,109 @@ export class LocalStore {
     return this.state.couples.filter((c) => memberIds.has(c.user_a) && memberIds.has(c.user_b))
   }
 
+  /* ─── Invites (F8) ─── */
+
+  /**
+   * Add an existing user to a group's member list. No-op if already a member.
+   * Does NOT throw if the group or user doesn't exist — designed for CRDT replay.
+   */
+  addGroupMember(groupId: number, userId: string): void {
+    const already = this.state.groupMembers.some((gm) => gm.group_id === groupId && gm.user_id === userId)
+    if (already) return
+    this.state.groupMembers.push({ group_id: groupId, user_id: userId })
+    this.save()
+  }
+
+  /**
+   * Create a pending invite. Idempotent: if a pending invite already exists
+   * for the same (group_id, invitee_id) pair (or same token), returns the
+   * existing record instead of creating a duplicate. If invitee_id is null
+   * (anonymous/link-based invite), dedupes by token.
+   */
+  createInvite(
+    groupId: number,
+    inviterId: string,
+    inviterName: string,
+    inviteeId?: string | null,
+    inviteeName?: string | null,
+    opts?: { token?: string; uuid?: string },
+  ): PendingInviteRecord {
+    // Dedupe: check existing pending for same (group, invitee)
+    if (inviteeId) {
+      const existing = this.state.pendingInvites.find(
+        (p) => p.group_id === groupId && p.invitee_id === inviteeId && p.status === 'pending',
+      )
+      if (existing) return { ...existing }
+    }
+    const token = opts?.token ?? crypto.randomUUID()
+    // Dedupe by token
+    const existingToken = this.state.pendingInvites.find((p) => p.token === token && p.status === 'pending')
+    if (existingToken) return { ...existingToken }
+
+    const id = this.state.nextInviteId++
+    const uuid = opts?.uuid ?? crypto.randomUUID()
+    const created_at = new Date().toISOString()
+    const record: PendingInviteRecord = {
+      id,
+      uuid,
+      group_id: groupId,
+      inviter_id: inviterId,
+      inviter_name: inviterName,
+      invitee_id: inviteeId ?? null,
+      invitee_name: inviteeName ?? null,
+      token,
+      status: 'pending',
+      created_at,
+    }
+    this.state.pendingInvites.push(record)
+    this.save()
+    return { ...record }
+  }
+
+  /** Return all pending invites for a group (any status). */
+  getPendingInvitesForGroup(groupId: number): PendingInviteRecord[] {
+    return this.state.pendingInvites.filter((p) => p.group_id === groupId)
+  }
+
+  /** Return all pending invites where the given user is the invitee (any status). */
+  getPendingInvitesForUser(userId: string): PendingInviteRecord[] {
+    return this.state.pendingInvites.filter((p) => p.invitee_id === userId)
+  }
+
+  /** Look up an invite by its unique token. */
+  getInviteByToken(token: string): PendingInviteRecord | undefined {
+    return this.state.pendingInvites.find((p) => p.token === token)
+  }
+
+  /** Look up an invite by its uuid (regardless of invitee/user). */
+  getInviteByUuid(uuid: string): PendingInviteRecord | undefined {
+    return this.state.pendingInvites.find((p) => p.uuid === uuid)
+  }
+
+  /**
+   * Mark a pending invite as accepted. Idempotent: if already accepted or
+   * declined, returns false; returns true on first application.
+   */
+  acceptInvite(inviteUuid: string): boolean {
+    const invite = this.state.pendingInvites.find((p) => p.uuid === inviteUuid)
+    if (!invite || invite.status !== 'pending') return false
+    invite.status = 'accepted'
+    this.save()
+    return true
+  }
+
+  /**
+   * Mark a pending invite as declined. Idempotent: if already accepted or
+   * declined, returns false; returns true on first application.
+   */
+  declineInvite(inviteUuid: string): boolean {
+    const invite = this.state.pendingInvites.find((p) => p.uuid === inviteUuid)
+    if (!invite || invite.status !== 'pending') return false
+    invite.status = 'declined'
+    this.save()
+    return true
+  }
+
   /* ─── Raw data export for sync ─── */
 
   getAllData(): StoreState {
@@ -627,6 +750,7 @@ export class LocalStore {
     for (const e of state.expenses) if (!e.uuid) e.uuid = crypto.randomUUID()
     for (const s of state.settlements) if (!s.uuid) s.uuid = crypto.randomUUID()
     for (const c of state.couples ?? []) if (!c.uuid) c.uuid = crypto.randomUUID()
+    for (const p of state.pendingInvites ?? []) if (!p.uuid) p.uuid = crypto.randomUUID()
   }
 
   /**
@@ -644,6 +768,7 @@ export class LocalStore {
     next.settlements = Array.isArray(next.settlements) ? next.settlements : []
     next.comments = Array.isArray(next.comments) ? next.comments : []
     next.couples = Array.isArray(next.couples) ? next.couples : []
+    next.pendingInvites = Array.isArray(next.pendingInvites) ? next.pendingInvites : []
     this.ensureUuids(next)
     this.fixCommentExpenseIds(next)
     return this.recomputeCounters(next)
@@ -666,6 +791,7 @@ export class LocalStore {
     state.nextSplitId = maxId(state.expenseSplits) + 1
     state.nextCommentId = maxId(state.comments) + 1
     state.nextCoupleId = maxId(state.couples ?? []) + 1
+    state.nextInviteId = maxId(state.pendingInvites ?? []) + 1
     return state
   }
 
@@ -685,6 +811,7 @@ export class LocalStore {
     const nextSettlements: SettlementRecord[] = [...cur.settlements]
     const nextComments: CommentRecord[] = [...cur.comments]
     const nextCouples: CoupleRecord[] = [...(cur.couples ?? [])]
+    const nextPendingInvites: PendingInviteRecord[] = [...(cur.pendingInvites ?? [])]
 
     // Maps from the *imported* numeric id to the imported uuid (join keys)
     const importedGroupIdToUuid = new Map<number, string>()
@@ -819,6 +946,31 @@ export class LocalStore {
       }
     }
 
+    // Pending invites: upsert by uuid (idempotent)
+    for (const ip of imported.pendingInvites ?? []) {
+      const existing = nextPendingInvites.find((p) => p.uuid === ip.uuid)
+      if (existing) {
+        existing.status = ip.status
+        existing.invitee_id = ip.invitee_id
+        existing.invitee_name = ip.invitee_name
+      } else {
+        const igUuid = importedGroupIdToUuid.get(ip.group_id)
+        const resolvedGroupId = igUuid ? groupUuidToId.get(igUuid) : ip.group_id
+        nextPendingInvites.push({
+          id: nextIdFrom(nextPendingInvites),
+          uuid: ip.uuid,
+          group_id: resolvedGroupId ?? ip.group_id,
+          inviter_id: ip.inviter_id,
+          inviter_name: ip.inviter_name,
+          invitee_id: ip.invitee_id,
+          invitee_name: ip.invitee_name,
+          token: ip.token,
+          status: ip.status,
+          created_at: ip.created_at,
+        })
+      }
+    }
+
     // Comments: dedupe on stable (expense_uuid + author + text + created_at);
     // re-derive expense_id from expense_uuid and remap group_id via uuid.
     for (const ic of imported.comments) {
@@ -850,12 +1002,14 @@ export class LocalStore {
       settlements: nextSettlements,
       comments: nextComments,
       couples: nextCouples,
+      pendingInvites: nextPendingInvites,
       nextGroupId: 1,
       nextExpenseId: 1,
       nextSettlementId: 1,
       nextSplitId: 1,
       nextCommentId: 1,
       nextCoupleId: 1,
+      nextInviteId: 1,
     })
   }
 }

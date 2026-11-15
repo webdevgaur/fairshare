@@ -59,13 +59,14 @@ npm run preview          # serve the production build
 | **F6** — Comments & Activity Feed | ✅ | [`src/lib/feed.ts`](src/lib/feed.ts), [`src/components/ActivityFeed.tsx`](src/components/ActivityFeed.tsx), [`src/components/ExpenseComments.tsx`](src/components/ExpenseComments.tsx), [`src/lib/notifications.ts`](src/lib/notifications.ts) |
 | **F5** — Export / Import | ✅ | [`src/lib/exportImport.ts`](src/lib/exportImport.ts) + [`src/pages/Profile.tsx`](src/pages/Profile.tsx) |
 | **F3** — Spending Insights & Analytics | ✅ | [`src/lib/engine.ts`](src/lib/engine.ts) `computeAnalytics` + the `SpendingInsights` section in [`src/pages/Dashboard.tsx`](src/pages/Dashboard.tsx) (hand-built donut + bar charts) |
-| **F1** — Receipt Scanning & OCR | ✅ | [`src/lib/ocr.ts`](src/lib/ocr.ts) lazy-loaded Tesseract.js v5 (WASM), [`src/lib/receipt-parser.ts`](src/lib/receipt-parser.ts) heuristic parser, [`src/lib/receipt-store.ts`](src/lib/receipt-store.ts) IndexedDB image store, [`src/components/ReceiptScanner.tsx`](src/components/ReceiptScanner.tsx) + [`src/components/ReceiptReview.tsx`](src/components/ReceiptReview.tsx), [`src/lib/api.ts`](src/lib/api.ts) `createExpenseFromScan` |
+|| **F1** — Receipt Scanning & OCR | ✅ | [`src/lib/ocr.ts`](src/lib/ocr.ts) lazy-loaded Tesseract.js v5 (WASM), [`src/lib/receipt-parser.ts`](src/lib/receipt-parser.ts) heuristic parser, [`src/lib/receipt-store.ts`](src/lib/receipt-store.ts) IndexedDB image store, [`src/components/ReceiptScanner.tsx`](src/components/ReceiptScanner.tsx) + [`src/components/ReceiptReview.tsx`](src/components/ReceiptReview.tsx), [`src/lib/api.ts`](src/lib/api.ts) `createExpenseFromScan` |
+|| **F9** — Couple Mode | ✅ (v0.5.0) | Mutual couple registration ([`src/pages/Profile.tsx`](src/pages/Profile.tsx)); per-group toggle ([`src/pages/GroupPage.tsx`](src/pages/GroupPage.tsx)); netted settlement suggestions (`src/lib/engine.ts`); expenses split by all N members |
 
 ---
 
 ## Test Suite
 
-The suite is **Playwright end-to-end** against the dev server (`http://localhost:5173`). It has **63 tests across 12 spec files** and no unit tests — the logic is exercised through the browser UI and via seeded `localStorage`.
+The suite is **Playwright end-to-end** against the dev server (`http://localhost:5173`). It has **80 tests across 14 spec files** and no unit tests — the logic is exercised through the browser UI and via seeded `localStorage`.
 
 ### Run the whole suite
 
@@ -98,8 +99,9 @@ npx playwright test --grep "F3"       # by test-name substring
 | `tests/exportImport.spec.ts` | 11 | JSON round-trip, CSV, Splitwise import |
 | `tests/analytics.spec.ts` | 4 | Spending insights, category breakdown |
 | `tests/receipt-scan.spec.ts` | 4 | Scan → OCR-extracted line items, uuid + no-image sync payload, IndexedDB storage, manual-entry fallback |
-| `tests/sync.spec.ts` | 3 | CRDT sync, offline queue |
-| **Total** | **63** | |
+|| `tests/sync.spec.ts` | 3 | CRDT sync, offline queue |
+|| `tests/couple-mode.spec.ts` | 11 | Couple registration, per-group toggle, netted settlements |
+|| **Total** | **80** | |
 
 ### Helpers in `tests/setup.ts`
 

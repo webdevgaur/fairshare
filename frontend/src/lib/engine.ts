@@ -75,6 +75,20 @@ export interface Comment {
   created_at: string
 }
 
+export interface PendingInvite {
+  id: number
+  /** Globally-unique stable identifier shared across devices. */
+  uuid: string
+  group_id: number
+  inviter_id: string
+  inviter_name: string
+  invitee_id?: string | null
+  invitee_name?: string | null
+  token: string
+  status: 'pending' | 'accepted' | 'declined'
+  created_at: string
+}
+
 export interface BalanceEntry {
   user_id: string
   user_name: string

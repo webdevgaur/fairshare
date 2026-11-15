@@ -5,6 +5,7 @@ import GroupPage from './pages/GroupPage'
 import Profile from './pages/Profile'
 import { getLocalUser, setLocalUser } from './lib/identity'
 import { syncClient, type SyncStatus } from './lib/sync'
+import { getInviteByToken, acceptInvite, declineInvite, getCurrentUserId } from './lib/api'
 
 function SyncDot({ status }: { status: SyncStatus }) {
   const colors: Record<SyncStatus, string> = {
@@ -104,13 +105,127 @@ function Layout({ children }: { children: React.ReactNode }) {
   )
 }
 
+/* ─── Invite deep-link dialogs (F8) ─── */
+
+function InviteConfirmDialog({ inviter, onJoin, onDecline }: { inviter: string; onJoin: () => void; onDecline: () => void }) {
+  return (
+    <div className="min-h-screen grid place-items-center bg-gradient-to-b from-slate-50 to-slate-100 px-4">
+      <div className="w-full max-w-sm">
+        <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">Join Group?</h2>
+          <p className="text-sm text-slate-600">
+            {inviter} invited you to join their group.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={onJoin}
+              className="flex-1 bg-slate-900 text-white text-sm font-medium py-2 rounded-lg hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+            >
+              Join
+            </button>
+            <button
+              onClick={onDecline}
+              className="flex-1 bg-white border border-slate-200 text-slate-700 text-sm font-medium py-2 rounded-lg hover:bg-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+            >
+              Decline
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InvalidInviteError({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div className="min-h-screen grid place-items-center bg-gradient-to-b from-slate-50 to-slate-100 px-4">
+      <div className="w-full max-w-sm">
+        <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">Invalid Invite</h2>
+          <p className="text-sm text-slate-600">
+            This invite link is invalid or expired.
+          </p>
+          <button
+            onClick={onDismiss}
+            className="w-full bg-slate-900 text-white text-sm font-medium py-2 rounded-lg hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [userReady, setUserReady] = useState(!!getLocalUser())
+  const [inviteDialog, setInviteDialog] = useState<{ token: string; groupId: number; inviter: string; inviteUuid: string } | null>(null)
 
   const handleSet = useCallback(() => setUserReady(true), [])
 
+  // Deep-link handling: check for `?invite=<token>` on first load
+  useEffect(() => {
+    if (!userReady) return
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get('invite')
+    if (!token) return
+
+    const invite = getInviteByToken(token)
+    if (!invite || invite.status !== 'pending') {
+      // Show invalid invite error as a simple state
+      setInviteDialog({
+        token: '',
+        groupId: -1,
+        inviter: '',
+        inviteUuid: '',
+      })
+      // Clean the URL
+      window.history.replaceState({}, '', window.location.pathname)
+      return
+    }
+    setInviteDialog({
+      token,
+      groupId: invite.group_id,
+      inviter: invite.inviter_name || 'Someone',
+      inviteUuid: invite.uuid,
+    })
+    // Clean the URL so the dialog doesn't re-trigger on navigation
+    window.history.replaceState({}, '', window.location.pathname)
+  }, [userReady])
+
+  function handleJoin() {
+    if (!inviteDialog) return
+    const uid = getCurrentUserId()
+    if (!uid) return
+    const gid = inviteDialog.groupId
+    acceptInvite(inviteDialog.inviteUuid, uid)
+    setInviteDialog(null)
+    // Navigate to the group page
+    window.location.href = `/groups/${gid}`
+  }
+
+  function handleDeclineDeepLink() {
+    if (!inviteDialog) return
+    declineInvite(inviteDialog.inviteUuid)
+    setInviteDialog(null)
+    window.location.href = '/'
+  }
+
   if (!userReady) {
     return <NamePrompt onSet={handleSet} />
+  }
+
+  // Show invite confirmation dialog or error
+  if (inviteDialog) {
+    if (inviteDialog.token === '') {
+      // Invalid invite
+      return <InvalidInviteError onDismiss={() => { setInviteDialog(null); window.location.href = '/' }} />
+    }
+    return <InviteConfirmDialog
+      inviter={inviteDialog.inviter}
+      onJoin={handleJoin}
+      onDecline={handleDeclineDeepLink}
+    />
   }
 
   return (
