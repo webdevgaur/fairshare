@@ -26,8 +26,9 @@ Built with [agency-agents](https://github.com/msitarzewski/agency-agents) specia
 || **F1** — Receipt Scanning & OCR | ✅ Done | On-device Tesseract.js v5 (WASM, lazy-loaded on first scan); heuristic parser extracts merchant / date / total / line items; receipt image stored in IndexedDB (never leaves device); review-and-assign grid before batch-creating expenses; falls back to manual entry if OCR fails. |
 ||| **F9** — Couple Mode | ✅ Done (v0.5.0) | Mutual couple registration (Profile.tsx); per-group toggle (GroupPage.tsx); netted settlement suggestions (intra-couple debt combined); expenses still split by all N members. |
 ||| **F8** — Group Member Invite | ✅ Done (v0.6.0) | Identity QR on Profile, QR scanner for scanning friend's code; share-link invite with deep-link handler (`?invite=<token>`); Pending → Accept/Decline workflow; 3 new CRDT ops. |
+|| **F10** — Activity Log | ✅ Done (v0.7.0) | Append-only chronological audit trail — logs every expense add, settlement, and comment (F11/F12 support ready). Backfill creates log entries for pre-existing data. New `activity-log.tsx` component + Activity tab on GroupPage. Schema v3 (exportImport). |
 
-**Roadmap:** the PRD ([`../PRD_FairShare.md`](../PRD_FairShare.md)) defines core features (F1–F9). **F2** (Recurring Expenses) and **F7** (Multi-Currency Travel Mode) remain unbuilt.
+**Roadmap:** the PRD ([`../PRD_FairShare.md`](../PRD_FairShare.md)) defines core features (F1–F10). **F2** (Recurring Expenses) and **F7** (Multi-Currency Travel Mode) remain unbuilt.
 
 ---
 
@@ -140,7 +141,7 @@ On first visit you'll be prompted for a name; this seeds the local identity. The
 ```bash
 cd frontend
 npm run dev &                   # keep the dev server running
-npx playwright test             # 91 E2E tests across 15 spec files
+npx playwright test             # 105 E2E tests across 16 spec files
 ```
 
 ---
