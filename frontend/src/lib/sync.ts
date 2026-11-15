@@ -28,7 +28,7 @@ export interface CRDTOperation {
   /** Globally unique operation ID (nanoid-style) */
   op_id: string
   /** Operation type */
-  type: 'create_group' | 'create_expense' | 'create_settlement' | 'create_comment' | 'update_group' | 'update_profile' | 'register_couple' | 'unregister_couple' | 'remove_couple' | 'create_invite' | 'accept_invite' | 'decline_invite'
+  type: 'create_group' | 'create_expense' | 'create_settlement' | 'create_comment' | 'update_group' | 'update_profile' | 'register_couple' | 'unregister_couple' | 'remove_couple' | 'create_invite' | 'accept_invite' | 'decline_invite' | 'create_activity'
   /** Group this operation belongs to */
   group_id: string | number
   /** Lamport clock value at time of creation */
@@ -58,6 +58,7 @@ export type CRDTOperationData =
   | { group_id: number; inviter_id: string; inviter_name: string; invitee_id?: string; invitee_name?: string; token: string; uuid: string }
   | { invite_uuid: string; group_id?: number; invitee_id?: string }
   | { invite_uuid: string }
+  | { group_id: number; uuid: string; type: string; actor_id: string; actor_name: string; entity_uuid?: string | null; payload?: Record<string, unknown> | null; created_at?: string }
 
 interface QueuedOp {
   op: CRDTOperation
@@ -768,6 +769,30 @@ class SyncClient {
         if (d.invite_uuid) {
           store.declineInvite(d.invite_uuid)
         }
+        break
+      }
+
+      case 'create_activity': {
+        const d = op.data as {
+          group_id: number
+          uuid: string
+          type: string
+          actor_id: string
+          actor_name: string
+          entity_uuid?: string | null
+          payload?: Record<string, unknown> | null
+          created_at?: string
+        }
+        // Idempotent: skip if already exists
+        if (store.getActivityByUuid(d.uuid)) break
+        store.logActivity({
+          group_id: d.group_id,
+          type: d.type as any,
+          actor_id: d.actor_id,
+          actor_name: d.actor_name,
+          entity_uuid: d.entity_uuid,
+          payload: d.payload,
+        })
         break
       }
     }

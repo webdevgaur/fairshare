@@ -1,5 +1,5 @@
 import { store, type StoreState, type CoupleRecord, type PendingInviteRecord } from './store'
-import { calculateBalances, simplifyDebts, netCoupleBalances, computeAnalytics, CATEGORIES, type BalanceEntry, type Expense, type Settlement, type Transaction, type PaymentHandles, type Comment, type ActivityItem, type AnalyticsSummary, type CategorySpend, type MonthlySpend, type CoupleNettingConfig } from './engine'
+import { calculateBalances, simplifyDebts, netCoupleBalances, computeAnalytics, CATEGORIES, type BalanceEntry, type Expense, type Settlement, type Transaction, type PaymentHandles, type Comment, type ActivityItem, type ActivityLogEntry, type AnalyticsSummary, type CategorySpend, type MonthlySpend, type CoupleNettingConfig } from './engine'
 import { getLocalUser } from './identity'
 import { syncClient } from './sync'
 import { buildActivityFeed } from './feed'
@@ -8,7 +8,7 @@ import type { ParsedLineItem } from './receipt-parser'
 
 /* ─── Re-export types ─── */
 
-export type { BalanceEntry, Expense, Settlement, Transaction, PaymentHandles, Comment, ActivityItem, AnalyticsSummary, CategorySpend, MonthlySpend, PendingInviteRecord }
+export type { BalanceEntry, Expense, Settlement, Transaction, PaymentHandles, Comment, ActivityItem, ActivityLogEntry, AnalyticsSummary, CategorySpend, MonthlySpend, PendingInviteRecord }
 export { CATEGORIES } from './engine'
 export type { Member } from './engine'
 
@@ -215,6 +215,25 @@ export function createExpense(data: {
     category: data.category,
   })
 
+  const activityEntry = store.logActivity({
+    group_id: data.group_id,
+    type: 'expense_added',
+    actor_id: user.id,
+    actor_name: user.name,
+    entity_uuid: expense.uuid,
+    payload: { description: data.description, amount: data.amount, splits: resolvedSplits },
+  })
+  syncClient.enqueue('create_activity', {
+    group_id: activityEntry.group_id,
+    uuid: activityEntry.uuid,
+    type: activityEntry.type,
+    actor_id: activityEntry.actor_id,
+    actor_name: activityEntry.actor_name,
+    entity_uuid: activityEntry.entity_uuid,
+    payload: activityEntry.payload,
+    created_at: activityEntry.created_at,
+  })
+
   return expense
 }
 
@@ -268,6 +287,9 @@ export function createSettlement(data: {
   amount: number
   date?: string
 }): Settlement {
+  const user = getLocalUser()
+  if (!user) throw new Error('No local user')
+
   const settlement = store.createSettlement(data.group_id, data.from_user, data.to_user, data.amount, {
     date: data.date,
   })
@@ -280,6 +302,25 @@ export function createSettlement(data: {
     amount: data.amount,
     date: settlement.date,
     created_at: settlement.created_at,
+  })
+
+  const activityEntry = store.logActivity({
+    group_id: data.group_id,
+    type: 'settlement_created',
+    actor_id: user.id,
+    actor_name: user.name,
+    entity_uuid: settlement.uuid,
+    payload: { amount: data.amount },
+  })
+  syncClient.enqueue('create_activity', {
+    group_id: activityEntry.group_id,
+    uuid: activityEntry.uuid,
+    type: activityEntry.type,
+    actor_id: activityEntry.actor_id,
+    actor_name: activityEntry.actor_name,
+    entity_uuid: activityEntry.entity_uuid,
+    payload: activityEntry.payload,
+    created_at: activityEntry.created_at,
   })
 
   return settlement
@@ -320,6 +361,25 @@ export function createComment(groupId: number, expenseUuid: string, text: string
     text: comment.text,
   })
 
+  const activityEntry = store.logActivity({
+    group_id: groupId,
+    type: 'comment_added',
+    actor_id: user.id,
+    actor_name: user.name,
+    entity_uuid: expenseUuid,
+    payload: { text: comment.text },
+  })
+  syncClient.enqueue('create_activity', {
+    group_id: activityEntry.group_id,
+    uuid: activityEntry.uuid,
+    type: activityEntry.type,
+    actor_id: activityEntry.actor_id,
+    actor_name: activityEntry.actor_name,
+    entity_uuid: activityEntry.entity_uuid,
+    payload: activityEntry.payload,
+    created_at: activityEntry.created_at,
+  })
+
   return comment
 }
 
@@ -327,6 +387,12 @@ export function createComment(groupId: number, expenseUuid: string, text: string
 
 export function getActivityFeed(groupId: number): ActivityItem[] {
   return buildActivityFeed(groupId)
+}
+
+/* ─── Activity Log (F10) ─── */
+
+export function getGroupActivityLog(groupId: number): ActivityLogEntry[] {
+  return store.getGroupActivityLog(groupId)
 }
 
 /* ─── Payment handles ─── */

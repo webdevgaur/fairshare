@@ -24,7 +24,7 @@ import type { BalanceEntry, Transaction, PendingInviteRecord } from '../lib/api'
 import { buildPaymentLink, type PaymentProvider } from '../lib/paymentLinks'
 import { encodeInviteQR, buildInviteLink } from '../lib/invites'
 import QrCode from '@/components/qr-code'
-import ActivityFeed from '@/components/ActivityFeed'
+import ActivityLog from '@/components/activity-log'
 import ReceiptScanner from '@/components/ReceiptScanner'
 import ReceiptReview from '@/components/ReceiptReview'
 import { parseReceipt, type ParsedReceipt, type ParsedLineItem } from '../lib/receipt-parser'
@@ -126,6 +126,7 @@ export default function GroupPage() {
   const [scanStage, setScanStage] = useState<'idle' | 'capture' | 'review'>('idle')
   const [scanImage, setScanImage] = useState<Blob | null>(null)
   const [scanParsed, setScanParsed] = useState<ParsedReceipt | null>(null)
+  const [activeTab, setActiveTab] = useState<'expenses' | 'activity'>('expenses')
 
   const currentUserId = getCurrentUserId()
 
@@ -390,7 +391,36 @@ export default function GroupPage() {
         </div>
       )}
 
-      {/* Invite member (F8) */}
+      {/* Tab: Expenses / Activity */}
+      <div className="flex border-b border-slate-200" role="tablist">
+        <button
+          role="tab"
+          aria-selected={activeTab === 'expenses'}
+          onClick={() => setActiveTab('expenses')}
+          className={`flex-1 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'expenses'
+              ? 'text-slate-900 border-b-2 border-slate-900'
+              : 'text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          Expenses
+        </button>
+        <button
+          role="tab"
+          aria-selected={activeTab === 'activity'}
+          onClick={() => setActiveTab('activity')}
+          className={`flex-1 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'activity'
+              ? 'text-slate-900 border-b-2 border-slate-900'
+              : 'text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          Activity
+        </button>
+      </div>
+
+      <div className={activeTab === 'expenses' ? '' : 'hidden'}>
+        {/* Invite member (F8) */}
       <div className="flex flex-wrap gap-2 mb-4">
         <Button
           variant="outline"
@@ -758,13 +788,11 @@ export default function GroupPage() {
           </form>
         </Card>
       )}
+      </div>
 
-      {/* Unified activity feed */}
-      <h2 className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-        <span className="inline-block w-0.5 h-3.5 rounded-full bg-slate-300" />
-        Activity
-      </h2>
-      <ActivityFeed groupId={groupId} />
+      {activeTab === 'activity' && (
+        <ActivityLog groupId={groupId} />
+      )}
     </div>
   )
 }

@@ -169,6 +169,37 @@ export type ActivityItem =
   | ActivitySettlementItem
   | ActivityCommentItem
 
+/* ─── Activity Log (F10) ─── */
+
+/** The type of an activity-log entry. */
+export type ActivityType =
+  | 'expense_added'
+  | 'settlement_created'
+  | 'expense_deleted'
+  | 'dispute_created'
+  | 'dispute_resolved'
+  | 'comment_added'
+
+/**
+ * A single entry in the group's append-only activity log.
+ * Created when a relevant action occurs and synced as a `create_activity`
+ * CRDT op so every device sees the same entries in the same order.
+ */
+export interface ActivityLogEntry {
+  id: number
+  /** Globally-unique stable identifier shared across devices. */
+  uuid: string
+  group_id: number
+  type: ActivityType
+  actor_id: string
+  actor_name: string
+  created_at: string
+  /** The uuid of the entity this entry refers to (expense, settlement, etc.). */
+  entity_uuid?: string | null
+  /** Arbitrary payload for type-specific data (e.g. split snapshot for expense_added). */
+  payload?: Record<string, unknown> | null
+}
+
 /**
  * Greedy debt-simplification algorithm.
  *
