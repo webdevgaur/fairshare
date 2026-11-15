@@ -610,8 +610,15 @@ export function getPendingInvitesForUser(userId: string): PendingInviteRecord[] 
  * enqueue an accept_invite CRDT op.
  */
 export function acceptInvite(inviteUuid: string, userId: string): void {
-  const invites = store.getPendingInvitesForUser(userId)
-  const invite = invites.find((i) => i.uuid === inviteUuid)
+  // Try user-specific invites first
+  let invites = store.getPendingInvitesForUser(userId)
+  let invite = invites.find((i) => i.uuid === inviteUuid)
+
+  // If not found, try open invites (share-link with null invitee_id)
+  if (!invite) {
+    invite = store.getInviteByUuid(inviteUuid)
+  }
+
   if (!invite) throw new Error('Invite not found')
 
   store.acceptInvite(inviteUuid)

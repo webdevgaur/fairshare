@@ -197,10 +197,11 @@ function App() {
     if (!inviteDialog) return
     const uid = getCurrentUserId()
     if (!uid) return
+    const gid = inviteDialog.groupId
     acceptInvite(inviteDialog.inviteUuid, uid)
     setInviteDialog(null)
     // Navigate to the group page
-    window.location.href = `/groups/${inviteDialog.groupId}`
+    window.location.href = `/groups/${gid}`
   }
 
   function handleDeclineDeepLink() {

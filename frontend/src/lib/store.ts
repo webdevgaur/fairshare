@@ -682,6 +682,11 @@ export class LocalStore {
     return this.state.pendingInvites.find((p) => p.token === token)
   }
 
+  /** Look up an invite by its uuid (regardless of invitee/user). */
+  getInviteByUuid(uuid: string): PendingInviteRecord | undefined {
+    return this.state.pendingInvites.find((p) => p.uuid === uuid)
+  }
+
   /**
    * Mark a pending invite as accepted. Idempotent: if already accepted or
    * declined, returns false; returns true on first application.

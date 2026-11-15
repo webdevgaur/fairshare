@@ -266,11 +266,10 @@ export default function GroupPage() {
   }
 
   function handleShowInvite() {
-    // Generate a fresh invite token for this group
-    const token = crypto.randomUUID()
-    setInviteToken(token)
     // Create an open invite (no specific invitee) so there's a record for the link
-    createInviteForGroup(groupId)
+    const record = createInviteForGroup(groupId)
+    // Use the token FROM the store record so the link matches what's saved
+    setInviteToken(record.token)
     loadInvites()
     setShowInvite(true)
   }
