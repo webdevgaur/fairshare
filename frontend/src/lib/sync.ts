@@ -887,19 +887,10 @@ class SyncClient {
           resolved_at?: string
         }
         // Resolve the dispute in the store (idempotent)
+        // Note: Activity logging happens only in api.ts (canonical source site),
+        // where a separate create_activity op is enqueued. Do NOT log here —
+        // it would create duplicate dispute_resolved entries on remote devices.
         store.applyResolve(d.dispute_uuid, d.outcome, d.resolved_at)
-        // Log a dispute_resolved activity entry
-        const dispute = store.getDisputeByUuid(d.dispute_uuid)
-        if (dispute) {
-          store.logActivity({
-            group_id: dispute.group_id,
-            type: 'dispute_resolved',
-            actor_id: dispute.proposer_id,
-            actor_name: dispute.proposer_name,
-            entity_uuid: dispute.expense_uuid,
-            payload: { outcome: d.outcome, dispute_uuid: d.dispute_uuid },
-          })
-        }
         break
       }
     }
