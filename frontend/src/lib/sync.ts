@@ -28,7 +28,7 @@ export interface CRDTOperation {
   /** Globally unique operation ID (nanoid-style) */
   op_id: string
   /** Operation type */
-  type: 'create_group' | 'create_expense' | 'create_settlement' | 'create_comment' | 'update_group' | 'update_profile' | 'register_couple' | 'unregister_couple' | 'remove_couple' | 'create_invite' | 'accept_invite' | 'decline_invite' | 'create_activity'
+  type: 'create_group' | 'create_expense' | 'create_settlement' | 'create_comment' | 'update_group' | 'update_profile' | 'register_couple' | 'unregister_couple' | 'remove_couple' | 'create_invite' | 'accept_invite' | 'decline_invite' | 'create_activity' | 'delete_expense'
   /** Group this operation belongs to */
   group_id: string | number
   /** Lamport clock value at time of creation */
@@ -59,6 +59,7 @@ export type CRDTOperationData =
   | { invite_uuid: string; group_id?: number; invitee_id?: string }
   | { invite_uuid: string }
   | { group_id: number; uuid: string; type: string; actor_id: string; actor_name: string; entity_uuid?: string | null; payload?: Record<string, unknown> | null; created_at?: string }
+  | { group_id: number; expenseUuid: string; actor_id: string; actor_name: string; created_at?: string }
 
 interface QueuedOp {
   op: CRDTOperation
@@ -795,6 +796,22 @@ class SyncClient {
           uuid: d.uuid,
           created_at: d.created_at,
         })
+        break
+      }
+
+      case 'delete_expense': {
+        const d = op.data as {
+          group_id: number
+          expenseUuid: string
+          actor_id: string
+          actor_name: string
+          created_at?: string
+        }
+        // Idempotent: check if expense is already deleted
+        const expenses = store.getGroupExpenses(Number(d.group_id))
+        const expense = expenses.find((e) => e.uuid === d.expenseUuid)
+        if (!expense || expense.deleted) break
+        store.deleteExpense(Number(d.group_id), d.expenseUuid, d.actor_id, d.actor_name)
         break
       }
     }

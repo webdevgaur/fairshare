@@ -5,6 +5,8 @@ import {
   getGroup,
   getGroupBalances,
   getGroupMembers,
+  getExpenses,
+  deleteExpense,
   createExpense,
   createExpenseFromScan,
   createSettlement,
@@ -20,13 +22,14 @@ import {
   acceptInvite,
   declineInvite,
 } from '../lib/api'
-import type { BalanceEntry, Transaction, PendingInviteRecord } from '../lib/api'
+import type { BalanceEntry, Transaction, PendingInviteRecord, Expense } from '../lib/api'
 import { buildPaymentLink, type PaymentProvider } from '../lib/paymentLinks'
 import { encodeInviteQR, buildInviteLink } from '../lib/invites'
 import QrCode from '@/components/qr-code'
 import ActivityLog from '@/components/activity-log'
 import ReceiptScanner from '@/components/ReceiptScanner'
 import ReceiptReview from '@/components/ReceiptReview'
+import ConfirmDialog from '@/components/confirm-dialog'
 import { parseReceipt, type ParsedReceipt, type ParsedLineItem } from '../lib/receipt-parser'
 import { putReceipt } from '../lib/receipt-store'
 import type { OcrResult } from '../lib/receipt-parser'
@@ -94,6 +97,8 @@ export default function GroupPage() {
   const [balances, setBalances] = useState<BalanceEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [showBalances, setShowBalances] = useState(false)
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [deletingExpense, setDeletingExpense] = useState<string | null>(null)
 
   // Expense form
   const [showExpense, setShowExpense] = useState(false)
@@ -138,6 +143,7 @@ export default function GroupPage() {
     setGroup(g)
     setMembers(m)
     setBalances(b.balances)
+    setExpenses(getExpenses(groupId))
 
     // Couple-mode toggle availability (F9): only offered when the current
     // user is registered in a couple AND their partner is a member here.
@@ -788,6 +794,56 @@ export default function GroupPage() {
           </form>
         </Card>
       )}
+
+      {/* Expense list (F11) */}
+      {expenses.length > 0 && (
+        <div className="space-y-2 mt-4">
+          <h2 className="text-xs uppercase tracking-wider font-medium text-slate-400 mb-2">
+            Expenses
+          </h2>
+          {expenses.map((exp) => (
+            <div
+              key={exp.uuid}
+              className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5"
+            >
+              <div className="min-w-0 text-sm text-slate-700">
+                <span className="font-medium">{exp.description}</span>
+                <span className="text-slate-400"> — {formatCurrency(exp.amount)}</span>
+                <div className="text-xs text-slate-400">
+                  paid by {exp.paid_by_name} · {exp.date}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeletingExpense(exp.uuid)}
+                className="inline-flex items-center justify-center w-11 h-11 rounded-lg text-rose-400 hover:text-rose-600 hover:bg-rose-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2"
+                aria-label={`Delete ${exp.description}`}
+              >
+                🗑
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Delete confirmation dialog (F11) */}
+      <ConfirmDialog
+        open={deletingExpense !== null}
+        title="Delete Expense"
+        message="Are you sure you want to delete this expense? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={() => {
+          if (deletingExpense) {
+            deleteExpense(groupId, deletingExpense)
+            setDeletingExpense(null)
+            setBalances(getGroupBalances(groupId).balances)
+            setExpenses(getExpenses(groupId))
+            setSuggestedTxns([])
+          }
+        }}
+        onCancel={() => setDeletingExpense(null)}
+      />
       </div>
 
       {activeTab === 'activity' && (

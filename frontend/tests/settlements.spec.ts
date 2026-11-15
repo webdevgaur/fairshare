@@ -51,6 +51,39 @@ test.describe('Settlements', () => {
     await expect(page.getByText('Bob').first()).toBeVisible()
   })
 
+  test('settlements ignore deleted expenses', async ({ page }) => {
+    const userId = await seedIdentity(page, 'Alice')
+    const groupId = await seedGroup(page, 'Home', '', ['Bob'])
+    await seedExpense(page, groupId, 'Dinner', 100)
+    await gotoApp(page, `/groups/${groupId}`)
+
+    // Before delete: verify settlement suggestions exist (Bob owes Alice $50)
+    const before = await page.evaluate(async ({ groupId }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.getSuggestedSettlements(groupId)
+    }, { groupId })
+    expect(before.length).toBeGreaterThanOrEqual(1)
+
+    // Delete the expense via the API
+    const expenses = await page.evaluate(async ({ groupId }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.getExpenses(groupId)
+    }, { groupId })
+    if (expenses.length > 0) {
+      await page.evaluate(async ({ groupId, expenseUuid }: any) => {
+        const api: any = await import('/src/lib/api.ts')
+        api.deleteExpense(groupId, expenseUuid)
+      }, { groupId, expenseUuid: expenses[0].uuid })
+    }
+
+    // After delete: settlement suggestions should be empty (no active expenses)
+    const after = await page.evaluate(async ({ groupId }: any) => {
+      const api: any = await import('/src/lib/api.ts')
+      return api.getSuggestedSettlements(groupId)
+    }, { groupId })
+    expect(after.length).toBe(0)
+  })
+
   test('couple mode does not change existing settlement arithmetic', async ({ page }) => {
     await seedIdentity(page, 'Alice')
     const groupId = await seedGroup(page, 'Household', '', ['Bob'])

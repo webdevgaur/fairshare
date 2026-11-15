@@ -86,6 +86,8 @@ export interface ExpenseRecord {
   created_at: string
   /** Optional curated category (one of CATEGORIES); absent = "Other" at read. */
   category?: string
+  /** Soft-delete marker (F11): true when the expense is deleted. Absent/undefined means active. */
+  deleted?: boolean
 }
 
 export interface ExpenseSplitRecord {
@@ -511,7 +513,7 @@ export class LocalStore {
   }
 
   getGroupExpenses(groupId: number): Expense[] {
-    const exps = this.state.expenses.filter((e) => e.group_id === groupId)
+    const exps = this.state.expenses.filter((e) => e.group_id === groupId && !e.deleted)
     return exps.map((e) => {
       const paidByName = this.state.users.find((u) => u.id === e.paid_by)?.name || 'Unknown'
       const splits = this.state.expenseSplits
@@ -522,6 +524,48 @@ export class LocalStore {
           amount: s.amount,
         }))
       return { ...e, paid_by_name: paidByName, splits }
+    })
+  }
+
+  /**
+   * Soft-delete an expense by its stable uuid within a group.
+   * Idempotent: deleting an already-deleted expense is a no-op.
+   * Returns the activity log entry recording the deletion.
+   */
+  deleteExpense(groupId: number, expenseUuid: string, actorId: string, actorName: string): ActivityLogEntry {
+    const expense = this.state.expenses.find((e) => e.uuid === expenseUuid && e.group_id === groupId)
+    if (!expense) {
+      // Expense not found — likely already deleted or never existed. Log as a
+      // deletion anyway so the activity log records the attempt idempotently.
+      return this.logActivity({
+        type: 'expense_deleted',
+        group_id: groupId,
+        actor_id: actorId,
+        actor_name: actorName,
+        entity_uuid: expenseUuid,
+        payload: { description: '(unknown expense)' },
+      })
+    }
+    if (expense.deleted) {
+      // Already deleted — idempotent: log and return without double-setting.
+      return this.logActivity({
+        type: 'expense_deleted',
+        group_id: groupId,
+        actor_id: actorId,
+        actor_name: actorName,
+        entity_uuid: expenseUuid,
+        payload: { description: expense.description },
+      })
+    }
+    expense.deleted = true
+    this.save()
+    return this.logActivity({
+      type: 'expense_deleted',
+      group_id: groupId,
+      actor_id: actorId,
+      actor_name: actorName,
+      entity_uuid: expenseUuid,
+      payload: { description: expense.description },
     })
   }
 
@@ -997,6 +1041,7 @@ export class LocalStore {
         existing.date = ie.date
         existing.created_at = ie.created_at
         if (ie.category !== undefined) existing.category = ie.category
+        if (ie.deleted !== undefined) existing.deleted = ie.deleted
       } else {
         const id = nextIdFrom(nextExpenses)
         nextExpenses.push({
@@ -1009,6 +1054,7 @@ export class LocalStore {
           date: ie.date,
           created_at: ie.created_at,
           category: ie.category,
+          deleted: ie.deleted,
         })
         expenseUuidToId.set(ie.uuid, id)
       }
